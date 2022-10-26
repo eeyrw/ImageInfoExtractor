@@ -5,13 +5,12 @@ from shutil import copyfile
 import argparse
 import pathlib
 from tqdm import tqdm
-sys.path.append("./hyperIQA")
-sys.path.append("./BLIP")
-from hyperIQA.inference import Predictor, pil_loader
-import BLIP.predict_simple
+import webdataset as wds
 
 class ImageQuailityTool:
     def __init__(self) -> None:
+        sys.path.append("./hyperIQA")
+        from hyperIQA.inference import Predictor, pil_loader
         self.imageQualityPredictor = Predictor(
             r'hyperIQA\pretrained\koniq_pretrained.pkl')
 
@@ -30,6 +29,8 @@ class ImageQuailityTool:
 
 class ImageCaptionTool:
     def __init__(self) -> None:
+        sys.path.append("./BLIP")
+        import BLIP.predict_simple
         self.imageCaptionPredictor = BLIP.predict_simple.Predictor()
 
     def update(self, imageInfo, topDir):
@@ -44,9 +45,9 @@ class ImageCaptionTool:
 
 
 class ImageInfoManager:
-    def __init__(self, topDir, imageInfoFileName='ImageInfo.json') -> None:
+    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', processTools=[]) -> None:
         self.topDir = topDir
-        self.processTools = [ImageQuailityTool, ImageCaptionTool]
+        self.processTools = processTools
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
         if os.path.isfile(self.imageInfoFilePath):
             with open(self.imageInfoFilePath, 'r') as f:
@@ -141,9 +142,10 @@ class ImageInfoManager:
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dsDir', type=str, default=r'F:\NSFW_DS\twitter_nsfw_data')
+    parser.add_argument('--dsDir', type=str, default=r'C:\Users\uie38447\Desktop\Hardware Settings')
     config = parser.parse_args()
-    imageInfoManager = ImageInfoManager(config.dsDir)
+    tools = []#[ImageQuailityTool, ImageCaptionTool]
+    imageInfoManager = ImageInfoManager(config.dsDir,processTools=tools)
     imageInfoManager.updateImages()
     imageInfoManager.infoUpdate()
     imageInfoManager.saveImageInfoList()

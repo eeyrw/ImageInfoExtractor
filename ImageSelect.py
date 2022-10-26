@@ -3,28 +3,53 @@ import argparse
 from shutil import copyfile
 import os
 from tqdm import tqdm
+import webdataset as wds
 
 
 class ImageDsCreator:
     def __init__(self, outputDir) -> None:
         self.imageSetList = []
         self.outputDir = outputDir
-        self.imageInfoList = []
-        self.imageInfoFilePath = os.path.join(self.outputDir,'ImageInfo.json')
+        self.imageInfoListList = []
+        self.imageInfoFilePath = os.path.join(self.outputDir, 'ImageInfo.json')
 
-    def generate(self):
+    def filterImageInfoList(self):
         totalImageNum = 0
         for jsonPath, criteria in self.imageSetList:
             with open(jsonPath, 'r') as f:
                 imageInfo = json.load(f)
-            dsRoot = os.path.dirname(jsonPath)
             filterList = [
                 singleImageInfo for singleImageInfo in imageInfo if criteria(singleImageInfo)]
             totalImageNum = totalImageNum + len(filterList)
+            self.imageInfoListList.append(
+                (os.path.dirname(jsonPath), filterList))
+
+        print('Total image num after filtering: %s' % totalImageNum)
+        with open(self.imageInfoFilePath, 'w') as f:
+            json.dump(self.imageInfoList, f)
+
+    def generateWdsDataset(self):
+        sink = wds.ShardWriter(os.path.join(
+            self.outputDir, "FinalDsWds-%05d.tar"))
+        for imageRoot, imageInfoList in self.imageInfoListList:
+            for imageInfo in imageInfoList:
+                relPath = imageInfo['IMG']
+                with open(os.path.join(imageRoot, relPath), "rb") as stream:
+                    image = stream.read()
+                sample = {
+                    "__key__":  os.path.splitext(relPath)[0],
+                    "jpg": image,
+                    "json": json.dumps(imageInfo).encode()
+                }
+                sink.write(sample)
+        sink.close()
+
+    def generate(self):
+        for imageRoot, imageInfoList in self.imageInfoListList:
             print('Copy %d images to %s from %s' %
-                  (len(filterList), self.outputDir, dsRoot))
-            for singleImageInfo in tqdm(filterList):
-                orinPath = os.path.join(dsRoot, singleImageInfo['IMG'])
+                  (len(imageInfoList), self.outputDir, imageRoot))
+            for singleImageInfo in tqdm(imageInfoList):
+                orinPath = os.path.join(imageRoot, singleImageInfo['IMG'])
                 targetDir = os.path.join(
                     self.outputDir, os.path.dirname(singleImageInfo['IMG']))
                 targetPath = os.path.join(
@@ -33,9 +58,6 @@ class ImageDsCreator:
                     os.makedirs(targetDir)
                 copyfile(orinPath, targetPath)
                 self.imageInfoList.append(singleImageInfo)
-        print('Total image num: %s'%totalImageNum)
-        with open(self.imageInfoFilePath, 'w') as f:
-            json.dump(self.imageInfoList, f)
 
     def addImageSet(self, jsonPath, criteria):
         self.imageSetList.append((jsonPath, criteria))
