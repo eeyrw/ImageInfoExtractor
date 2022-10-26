@@ -25,8 +25,7 @@ class ImageDsCreator:
                 (os.path.dirname(jsonPath), filterList))
 
         print('Total image num after filtering: %s' % totalImageNum)
-        with open(self.imageInfoFilePath, 'w') as f:
-            json.dump(self.imageInfoList, f)
+
 
     def generateWdsDataset(self):
         sink = wds.ShardWriter(os.path.join(
@@ -58,6 +57,8 @@ class ImageDsCreator:
                     os.makedirs(targetDir)
                 copyfile(orinPath, targetPath)
                 self.imageInfoList.append(singleImageInfo)
+        with open(self.imageInfoFilePath, 'w') as f:
+            json.dump(self.imageInfoList, f)
 
     def addImageSet(self, jsonPath, criteria):
         self.imageSetList.append((jsonPath, criteria))
@@ -83,4 +84,5 @@ if __name__ == '__main__':
     imgDsCreator.addImageSet(r"F:\NSFW_DS\various_source_nsfw_data\ImageInfo.json",
                              lambda singleImageInfo:
                              singleImageInfo['Q512'] > 65 and singleImageInfo['H']*singleImageInfo['W'] > 900*900)
+    imgDsCreator.filterImageInfoList()
     imgDsCreator.generate()
