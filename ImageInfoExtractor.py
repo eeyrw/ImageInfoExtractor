@@ -1,16 +1,15 @@
 import sys
 sys.path.append("./BLIP")
-sys.path.append("./TorchDeepDanbooru")
 from pillow_heif import register_heif_opener
 from tqdm import tqdm
 import pathlib
 import argparse
 import json
 import os
-from hpyerIQAInference.inference import Predictor, pil_loader
+import hpyerIQAInference.inference
 import BLIP.predict_simple
 from PIL import Image
-import TorchDeepDanbooru.inference
+import TorchDeepDanbooruInference.inference
 import Aesthetic
 
 register_heif_opener()
@@ -40,10 +39,10 @@ class ImageSizeInfoCorrectTool:
 
 class ImageQuailityTool:
     def __init__(self, topDir) -> None:
-        self.imageQualityPredictor = Predictor(weightsDir='./DLToolWeights')
+        self.imageQualityPredictor = hpyerIQAInference.inference.Predictor(weightsDir='./DLToolWeights')
 
     def update(self, imageInfo, topDir):
-        img = pil_loader(os.path.join(topDir, imageInfo['IMG']))
+        img = hpyerIQAInference.inference.pil_loader(os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict_multiscale(img)
         imageInfo.update({'W': width, 'H': height})
@@ -60,7 +59,7 @@ class ImageAestheticTool:
         self.imageAestheticPredictor = Aesthetic.Predictor(weightsDir='./DLToolWeights')
 
     def update(self, imageInfo, topDir):
-        img = pil_loader(os.path.join(topDir, imageInfo['IMG']))
+        img = hpyerIQAInference.inference.pil_loader(os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageAestheticPredictor.predict(img)
         imageInfo.update({'W': width, 'H': height})
@@ -73,7 +72,7 @@ class ImageAestheticTool:
 
 
 class ImageCaptionTool:
-    def __init__(self, topDir, captionModel='BLIP') -> None:
+    def __init__(self, topDir, captionModel='DeepDanbooru') -> None:
         captionFile = os.path.join(topDir, 'CustomCaptionPool.txt')
         if os.path.isfile(captionFile):
             customCaptionPool = []
@@ -87,11 +86,11 @@ class ImageCaptionTool:
             self.imageCaptionPredictor = BLIP.predict_simple.Predictor(
                 customCaptionPool=customCaptionPool)
         elif captionModel == 'DeepDanbooru':
-            self.imageCaptionPredictor = TorchDeepDanbooru.inference.Predictor()
+            self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(weightsDir='./DLToolWeights')
 
     def update(self, imageInfo, topDir):
         if imageInfo['Q512'] > 60:
-            img = pil_loader(os.path.join(topDir, imageInfo['IMG']))
+            img = hpyerIQAInference.inference.pil_loader(os.path.join(topDir, imageInfo['IMG']))
             captionDictList = self.imageCaptionPredictor.predict(img)
             imageInfo.update({'CAP': [captionDict['caption']
                                       for captionDict in captionDictList]})
@@ -222,9 +221,9 @@ if __name__ == '__main__':
                         default=r"F:\NSFW_DS\sj_HEIC")
     config = parser.parse_args()
     tools = [  # {'toolClass': ImageSizeInfoCorrectTool, 'forceUpdate': False},
-        {'toolClass': ImageQuailityTool, 'forceUpdate': True},
-        {'toolClass': ImageAestheticTool, 'forceUpdate': True},
-        #{'toolClass': ImageCaptionTool, 'forceUpdate': False}
+        {'toolClass': ImageQuailityTool, 'forceUpdate': False},
+        {'toolClass': ImageAestheticTool, 'forceUpdate': False},
+        {'toolClass': ImageCaptionTool, 'forceUpdate': True}
     ]
     imageInfoManager = ImageInfoManager(config.dsDir, processTools=tools)
     imageInfoManager.updateImages()
