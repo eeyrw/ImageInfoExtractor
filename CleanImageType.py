@@ -58,7 +58,10 @@ def CorrectImageFormat(topDir):
                             root, basename+type2ExtMap[actualType]))
                 else:
                     print('!!!!!!%s is %s' % (filename, actualType))
-                    os.remove(fullFilePath)
+                    try:
+                        os.remove(fullFilePath)
+                    except Exception as e:
+                        print(e)
 
     return imagePathList
 
@@ -85,3 +88,5 @@ def CheckFileValidity(topDir, imageInfoList=[]):
             print('Invalid file:%s' % fullFilePath)
 
 
+# CorrectImageFormat(r"path/to/images")
+# ConvertPngToJpg(r"path/to/images")

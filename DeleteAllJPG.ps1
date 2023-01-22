@@ -1,0 +1,1 @@
+Get-ChildItem * -Include *.jpg -Recurse | Remove-Item -force
