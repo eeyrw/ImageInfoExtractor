@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import clip
-
+import os
 
 # if you changed the MLP architecture during training, change it also here:
+
+
 class MLP(torch.nn.Module):
     def __init__(self, input_size):
         super().__init__()
@@ -38,9 +40,11 @@ def normalized(a, axis=-1, order=2):
 
 
 class Predictor():
-    def __init__(self, weightsPath="./sac+logos+ava1-l14-linearMSE.pth") -> None:
+    def __init__(self, weightsDir='.') -> None:
         self.model = MLP(768)  # CLIP embedding dim is 768 for CLIP ViT L 14
 
+        weightsPath = os.path.join(
+            weightsDir, "sac+logos+ava1-l14-linearMSE.pth")
         # load the model you trained previously or the model available in this repo
         s = torch.load(weightsPath)
 
@@ -50,7 +54,7 @@ class Predictor():
         self.model.eval()
 
         self.model2, self.preprocess = clip.load(
-            "ViT-L/14", device="cuda", download_root='./clip_root')  # RN50x64
+            "ViT-L/14", device="cuda", download_root=weightsDir)  # RN50x64
 
     def predict(self, img):
 

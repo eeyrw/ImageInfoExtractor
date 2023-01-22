@@ -127,3 +127,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# PyTorch weight
+/DLToolWeights/*.pth
+/DLToolWeights/*.pkl
+/DLToolWeights/*.pt

@@ -1,18 +1,18 @@
 import sys
-sys.path.append("./hyperIQA")
 sys.path.append("./BLIP")
 sys.path.append("./TorchDeepDanbooru")
-import Aesthetic
-import TorchDeepDanbooru.inference
-from PIL import Image
-import BLIP.predict_simple
-from hyperIQA.inference import Predictor, pil_loader
-import os
-import json
-import argparse
-import pathlib
-from tqdm import tqdm
 from pillow_heif import register_heif_opener
+from tqdm import tqdm
+import pathlib
+import argparse
+import json
+import os
+from hpyerIQAInference.inference import Predictor, pil_loader
+import BLIP.predict_simple
+from PIL import Image
+import TorchDeepDanbooru.inference
+import Aesthetic
+
 register_heif_opener()
 
 
@@ -40,8 +40,7 @@ class ImageSizeInfoCorrectTool:
 
 class ImageQuailityTool:
     def __init__(self, topDir) -> None:
-        self.imageQualityPredictor = Predictor(
-            r'hyperIQA\pretrained\koniq_pretrained.pkl')
+        self.imageQualityPredictor = Predictor(weightsDir='./DLToolWeights')
 
     def update(self, imageInfo, topDir):
         img = pil_loader(os.path.join(topDir, imageInfo['IMG']))
@@ -58,7 +57,7 @@ class ImageQuailityTool:
 
 class ImageAestheticTool:
     def __init__(self, topDir) -> None:
-        self.imageAestheticPredictor = Aesthetic.Predictor()
+        self.imageAestheticPredictor = Aesthetic.Predictor(weightsDir='./DLToolWeights')
 
     def update(self, imageInfo, topDir):
         img = pil_loader(os.path.join(topDir, imageInfo['IMG']))
@@ -116,7 +115,7 @@ class ImageInfoManager:
         self.topDir = topDir
         self.processTools = processTools
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
-        self.supportImageFormatList = ['.jpg','.webp','.png','.heic']
+        self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
         if os.path.isfile(self.imageInfoFilePath):
             with open(self.imageInfoFilePath, 'r') as f:
                 self.imageInfoList = json.load(f)
@@ -222,10 +221,11 @@ if __name__ == '__main__':
     parser.add_argument('--dsDir', type=str,
                         default=r"F:\NSFW_DS\sj_HEIC")
     config = parser.parse_args()
-    tools = [{'toolClass': ImageSizeInfoCorrectTool, 'forceUpdate': False},
-             {'toolClass': ImageQuailityTool, 'forceUpdate': False},
-             {'toolClass': ImageAestheticTool, 'forceUpdate': False},
-             {'toolClass': ImageCaptionTool, 'forceUpdate': False}]
+    tools = [  # {'toolClass': ImageSizeInfoCorrectTool, 'forceUpdate': False},
+        {'toolClass': ImageQuailityTool, 'forceUpdate': True},
+        {'toolClass': ImageAestheticTool, 'forceUpdate': True},
+        #{'toolClass': ImageCaptionTool, 'forceUpdate': False}
+    ]
     imageInfoManager = ImageInfoManager(config.dsDir, processTools=tools)
     imageInfoManager.updateImages()
     imageInfoManager.infoUpdate()
