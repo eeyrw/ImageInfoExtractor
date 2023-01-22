@@ -1,5 +1,4 @@
 import sys
-sys.path.append("./BLIP")
 from pillow_heif import register_heif_opener
 from tqdm import tqdm
 import pathlib
@@ -7,7 +6,7 @@ import argparse
 import json
 import os
 import hpyerIQAInference.inference
-import BLIP.predict_simple
+import BLIPInference.predict_simple
 from PIL import Image
 import TorchDeepDanbooruInference.inference
 import Aesthetic
@@ -72,7 +71,7 @@ class ImageAestheticTool:
 
 
 class ImageCaptionTool:
-    def __init__(self, topDir, captionModel='DeepDanbooru') -> None:
+    def __init__(self, topDir, captionModel='BLIP') -> None:
         captionFile = os.path.join(topDir, 'CustomCaptionPool.txt')
         if os.path.isfile(captionFile):
             customCaptionPool = []
@@ -83,8 +82,8 @@ class ImageCaptionTool:
         else:
             customCaptionPool = None
         if captionModel == 'BLIP':
-            self.imageCaptionPredictor = BLIP.predict_simple.Predictor(
-                customCaptionPool=customCaptionPool)
+            self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
+                customCaptionPool=customCaptionPool,weightsDir='./DLToolWeights')
         elif captionModel == 'DeepDanbooru':
             self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(weightsDir='./DLToolWeights')
 
