@@ -14,13 +14,13 @@ class Predictor():
         self.model = net(in_nc=n_channels, out_nc=n_channels,
                          nc=nc, nb=nb, act_mode='R')
         self.model.load_state_dict(torch.load(model_path), strict=True)
-        self.model.to('cuda')
+        self.model.to('cuda').half()
         self.model.eval()
 
     def predict(self, img):
 
         img_L = torch.from_numpy(np.ascontiguousarray(img)).permute(2, 0, 1).float().div(255.).unsqueeze(0)
-        img_L = img_L.to('cuda')
+        img_L = img_L.to('cuda',dtype=torch.float16)
 
         # ------------------------------------
         # (2) img_E
