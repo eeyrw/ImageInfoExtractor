@@ -5,10 +5,10 @@ import pickle
 import numpy as np
 import cv2
 
-from utils.visualization import draw_points_and_skeleton, joints_dict
-from utils.util import print_fps
-from utils.vitpose_util import keypoints_from_heatmaps
-from utils.yolov6_util import letterbox, non_max_suppression, preprocess_with_bboxes, xyxy2xywh, plot_box_and_label 
+from ..utils.visualization import draw_points_and_skeleton, joints_dict
+from ..utils.util import print_fps
+from ..utils.vitpose_util import keypoints_from_heatmaps
+from ..utils.yolov6_util import letterbox, non_max_suppression, preprocess_with_bboxes, xyxy2xywh, plot_box_and_label 
 
 
 def inference(original_imgs, yolov6_sess, vitpose_sess, cfg, smooth_net=None):

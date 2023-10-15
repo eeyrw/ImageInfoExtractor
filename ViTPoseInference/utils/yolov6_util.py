@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 
-from utils.nms import nms
+from ..utils.nms import nms
 
 
 def letterbox(im, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleup=True, stride=32, return_int=False):
