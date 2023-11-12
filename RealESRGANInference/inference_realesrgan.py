@@ -9,13 +9,13 @@ import numpy
 
 
 class Predictor():
-    def __init__(self, weightsDir='.', modeName='RealESRGAN_x4plus_anime_6B') -> None:
+    def __init__(self, weightsDir='.', modeName='RealESRGAN_x2plus') -> None:
         """Inference demo for Real-ESRGAN.
         """
         # help=('Model names: RealESRGAN_x4plus | RealESRNet_x4plus | RealESRGAN_x4plus_anime_6B | RealESRGAN_x2plus | '
         #           'realesr-animevideov3 | realesr-general-x4v3')
         self.model_name = modeName
-        self.outscale = 4
+        self.outscale = 2
 
         # determine models according to model names
         self.model_name = self.model_name .split('.')[0]
