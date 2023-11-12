@@ -7,7 +7,7 @@ import numpy as np
 
 class Predictor():
     def __init__(self, weightsDir='.') -> None:
-        self.reader = easyocr.Reader(['ch_sim','en']) # this needs to run only once to load the model into memory
+        self.reader = easyocr.Reader(['ch_sim','en'],model_storage_directory=os.path.join(weightsDir,'model')) # this needs to run only once to load the model into memory
 
     def predict(self, img):
         open_cv_image = np.array(img) 

@@ -129,7 +129,4 @@ dmypy.json
 .pyre/
 
 # PyTorch weight
-/DLToolWeights/*.pth
-/DLToolWeights/*/*.pth
-/DLToolWeights/*.pkl
-/DLToolWeights/*.pt
+/DLToolWeights
