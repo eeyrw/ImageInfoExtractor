@@ -12,7 +12,7 @@ from .Prepare_image import Image_load
 
 class Predictor():
     def __init__(self, weightsDir='.') -> None:
-        model_path = os.path.join(weightsDir,'./SPAQ/MT-A_release.pt')
+        model_path = os.path.join(weightsDir,'./MT-A_release.pt')
         self.model = MTA()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)

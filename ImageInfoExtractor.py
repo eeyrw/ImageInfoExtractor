@@ -13,10 +13,14 @@ import TorchDeepDanbooruInference.inference
 import Aesthetic
 import RealESRGANInference.inference_realesrgan
 import RealCUGANInference.inference_cugan
-import ViTPoseInference.inference_vitpose
+import ViTPoseInference.inference_vitpose_by_easypose
+import SPAQInference.inference_SPAQ
 from shutil import copyfile, move
 import open_clip
 import math
+import OCRInference.inference
+from PIL import ImageDraw
+
 register_heif_opener()
 
 
@@ -59,7 +63,7 @@ class ImageSizeInfoCorrectTool:
 class ImageQuailityTool:
     def __init__(self, topDir) -> None:
         self.imageQualityPredictor = hpyerIQAInference.inference.Predictor(
-            weightsDir='./DLToolWeights')
+            weightsDir='./DLToolWeights/HyperIQA')
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -74,11 +78,71 @@ class ImageQuailityTool:
     def fieldSet():
         return set(['Q512', 'H', 'W'])
 
+class ImageSPAQTool:
+    def __init__(self, topDir) -> None:
+        self.imageQualityPredictor = SPAQInference.inference_SPAQ.Predictor(
+            weightsDir='./DLToolWeights/SPAQ')
+
+    def update(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        width, height = img.size
+        score_dict = self.imageQualityPredictor.predict(img)
+        imageInfo.update({'W': width, 'H': height})
+        imageInfo.update(score_dict)
+        return imageInfo
+
+    @staticmethod
+    def fieldSet():
+        return set(['SPAQ', 'H', 'W'])
+    
+
+class ImageOCRTool:
+    def __init__(self, topDir) -> None:
+        self.imageOCRPredictor = OCRInference.inference.Predictor(weightsDir="./DLToolWeights/EasyOCR")
+
+    def update(self, imageInfo, topDir):
+        img = OCRInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        width, height = img.size
+        resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
+        poseResult = img.resize(
+                        tuple(math.ceil(x * resize_ratio) for x in img.size),
+                        Image.BICUBIC
+                    )     
+          
+        width, height = img.size
+        bounds = self.imageOCRPredictor.predict(poseResult)
+
+        self.draw_boxes(poseResult, bounds)
+        bakDir = os.path.join(topDir, 'ocr_result',
+                              os.path.dirname(imageInfo['IMG']))
+        bakImagePath = os.path.join(
+            bakDir, os.path.basename(imageInfo['IMG']))
+        if not os.path.exists(bakDir):
+            os.makedirs(bakDir)
+        poseResult.save(bakImagePath)
+
+        imageInfo.update({'W': width, 'H': height})
+        return imageInfo
+    
+    def draw_boxes(self,image, bounds, color='yellow', width=6):
+        draw = ImageDraw.Draw(image)
+        for bound in bounds:
+            p0, p1, p2, p3 = bound[0]
+            draw.line([*p0, *p1, *p2, *p3, *p0], fill=color, width=width)
+        return image
+
+
+    @staticmethod
+    def fieldSet():
+        return set(['H', 'W'])
+    
 
 class JpegQuailityTool:
     def __init__(self, topDir) -> None:
         self.imageQualityPredictor = FBCNNInference.inference.Predictor(
-            weightsDir='./DLToolWeights')
+            weightsDir='./DLToolWeights/FBCNN')
 
     def update(self, imageInfo, topDir):
         img = FBCNNInference.inference.pil_loader(
@@ -97,7 +161,7 @@ class JpegQuailityTool:
 class ImageAestheticTool:
     def __init__(self, topDir) -> None:
         self.imageAestheticPredictor = Aesthetic.Predictor(
-            weightsDir='./DLToolWeights')
+            weightsDir='./DLToolWeights/Aesthetic')
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -116,33 +180,33 @@ class ImageAestheticTool:
 class ImageSRTool:
     def __init__(self, topDir) -> None:
         self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
-            weightsDir='./DLToolWeights')
+            weightsDir='./DLToolWeights/RealESRGAN')
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
-        #if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
-        if width*height >1024*1024:
-            resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
+        if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
+        # if width*height >1024*1024:
+        #     resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
 
-            img = img.resize(
-                        tuple(math.ceil(x * resize_ratio) for x in img.size),
-                        Image.BICUBIC
-                    )    
+        #     img = img.resize(
+        #                 tuple(math.ceil(x * resize_ratio) for x in img.size),
+        #                 Image.BICUBIC
+        #             )    
             
-        srImg = self.imageSRPredictor.predict(img)
-        bakDir = os.path.join(topDir, 'raw_before_sr',
-                              os.path.dirname(imageInfo['IMG']))
-        rawImagePath = os.path.join(topDir, imageInfo['IMG'])
-        bakImagePath = os.path.join(
-            bakDir, os.path.basename(imageInfo['IMG']))
-        if not os.path.exists(bakDir):
-            os.makedirs(bakDir)
-        copyfile(rawImagePath, bakImagePath)
-        savedPath = rawImagePath
-        srImg.save(savedPath)
-        width, height = srImg.size
+            srImg = self.imageSRPredictor.predict(img)
+            bakDir = os.path.join(topDir, 'raw_before_sr',
+                                os.path.dirname(imageInfo['IMG']))
+            rawImagePath = os.path.join(topDir, imageInfo['IMG'])
+            bakImagePath = os.path.join(
+                bakDir, os.path.basename(imageInfo['IMG']))
+            if not os.path.exists(bakDir):
+                os.makedirs(bakDir)
+            copyfile(rawImagePath, bakImagePath)
+            savedPath = rawImagePath
+            srImg.save(savedPath)
+            width, height = srImg.size
 
 
         imageInfo.update({'W': width, 'H': height})
@@ -155,8 +219,8 @@ class ImageSRTool:
 
 class ImagePoseEstimateTool:
     def __init__(self, topDir) -> None:
-        self.imagePoseEstPredictor = ViTPoseInference.inference_vitpose.Predictor(
-            weightsDir='./DLToolWeights')
+        self.imagePoseEstPredictor = ViTPoseInference.inference_vitpose_by_easypose.Predictor(
+            weightsDir='./DLToolWeights/EasyPose')
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -187,7 +251,7 @@ class ImagePoseEstimateTool:
 class ImageFilterTool:
     def __init__(self, topDir) -> None:
         self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k',
-                                                                               cache_dir='./DLToolWeights')
+                                                                               cache_dir='./DLToolWeights/OpenCLIP')
         self.tokenizer = open_clip.get_tokenizer(
             'ViT-H-14')
         self.model.to('cuda')
@@ -239,10 +303,10 @@ class ImageCaptionTool:
             customCaptionPool = None
         if captionModel == 'BLIP':
             self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
-                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights')
+                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP')
         elif captionModel == 'DeepDanbooru':
             self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
-                weightsDir='./DLToolWeights')
+                weightsDir='./DLToolWeights/DeepDanbooru')
 
     def update(self, imageInfo, topDir):
         if imageInfo['Q512'] > 35:
@@ -328,6 +392,7 @@ class ImageInfoManager:
                         toolInstance.update(
                             self.imageInfoList[imageInfoIdx], self.topDir)
                     except Exception as e:
+                        raise e
                         print('ERROR:%s:%s' %
                               (self.imageInfoList[imageInfoIdx], str(e)))
 
@@ -375,24 +440,26 @@ class ImageInfoManager:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsDir', type=str,
-                        default=r"E:\HHH3")
+                        default=r"F:\NSFW_DS\twitter\aaa")
     parser.add_argument('--multiDsDir', type=str,
                         default=None)
     config = parser.parse_args()
     tools = [
         {'toolClass': ImageSizeInfoCorrectTool, 'forceUpdate': False},
-        #{'toolClass': ImageQuailityTool, 'forceUpdate': False},
-        #{'toolClass': ImageAestheticTool, 'forceUpdate': False},
+        {'toolClass': ImageQuailityTool, 'forceUpdate': False},
+        {'toolClass': ImageAestheticTool, 'forceUpdate': False},
         #{'toolClass': ImageSRTool, 'forceUpdate': True},
         #{'toolClass': ImageCaptionTool, 'forceUpdate': False},
         #{'toolClass': AdditionalMetaInfo, 'forceUpdate': True},
         #{'toolClass': JpegQuailityTool, 'forceUpdate': True},
-        {'toolClass': ImagePoseEstimateTool, 'forceUpdate': True},
-        #{'toolClass': ImageFilterTool, 'forceUpdate': True},
+        #{'toolClass': ImagePoseEstimateTool, 'forceUpdate': True},
+        {'toolClass': ImageSPAQTool, 'forceUpdate': True},
+        {'toolClass': ImageFilterTool, 'forceUpdate': True},
+        {'toolClass': ImageOCRTool, 'forceUpdate': True},
     ]
-
+    # config.multiDsDir = "True"
     if config.multiDsDir:
-        with os.scandir(r'F:\DiffusionDataset\artman\photo') as it:
+        with os.scandir(r'F:\NSFW_DS\tumblr') as it:
             for entry in it:
                 if entry.is_dir() and entry.name != 'original_images':
                     print(entry.path)
