@@ -1,0 +1,60 @@
+import sys
+from pillow_heif import register_heif_opener
+from tqdm import tqdm
+import pathlib
+import argparse
+import json
+import os
+from shutil import copyfile, move
+from PIL import ImageDraw
+from ImageInfoExtractor import ImageInfoManager
+
+
+class MultiDatasetExtractor:
+    def __init__(self, topDir) -> None:
+        self.topDir = topDir
+        self.dirsHasImageInfoJson = []
+        self.dirsHasNotImageInfoJson = []
+
+    def scanDir(self,printScanResult=False):
+        self.dirsHasImageInfoJson, self.dirsHasNotImageInfoJson = self.detectImageInfoFolder(
+            self.topDir)
+        
+        if printScanResult:
+            print('Scan Result (--: Has ImageInfoJson file, ??: Has not ImageInfoJson file)')
+            for dir in self.dirsHasImageInfoJson:
+                print('--',dir)
+            for dir in self.dirsHasNotImageInfoJson:
+                print('??',dir)
+        
+
+    def detectImageInfoFolder(self, path, ImageInfoJsonFileName='ImageInfo.json'):
+        dirsHasImageInfoJson = []
+        dirsHasNotImageInfoJson = []
+        dir_HasImageInfo = {}
+
+        for entry  in os.scandir(path):
+            file_path = entry.path
+            if entry.is_file(follow_symlinks=False) and os.path.basename(file_path) == ImageInfoJsonFileName:
+                dirsHasImageInfoJson.append(file_path)
+                return dirsHasImageInfoJson, dirsHasNotImageInfoJson
+            elif entry.is_dir(follow_symlinks=False):
+                dirsHasImageInfoJson_, dirsHasNotImageInfoJson_ = self.detectImageInfoFolder(
+                    file_path)
+                dirsHasImageInfoJson.extend(dirsHasImageInfoJson_)
+                dirsHasNotImageInfoJson.extend(dirsHasNotImageInfoJson_)
+                if len(dirsHasImageInfoJson_) > 0:
+                    dir_HasImageInfo[file_path] = True
+                else:
+                    dir_HasImageInfo[file_path] = False
+
+        if len(dirsHasImageInfoJson) > 0:
+            for path, hasImageInfo in dir_HasImageInfo.items():
+                if not hasImageInfo:
+                    dirsHasNotImageInfoJson.append(path)
+
+        return dirsHasImageInfoJson, dirsHasNotImageInfoJson
+
+if __name__ == '__main__':
+    multiDsExtractor = MultiDatasetExtractor(r'Dataset top dir')
+    multiDsExtractor.scanDir(printScanResult=True)

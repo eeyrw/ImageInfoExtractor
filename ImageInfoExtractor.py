@@ -5,6 +5,7 @@ import pathlib
 import argparse
 import json
 import os
+import yaml
 import hpyerIQAInference.inference
 import FBCNNInference.inference
 import BLIPInference.predict_simple
@@ -13,14 +14,18 @@ import TorchDeepDanbooruInference.inference
 import Aesthetic
 import RealESRGANInference.inference_realesrgan
 import RealCUGANInference.inference_cugan
-import ViTPoseInference.inference_vitpose_by_easypose
+# import ViTPoseInference.inference_vitpose_by_easypose
 import SPAQInference.inference_SPAQ
+import EATInference.inference
+import BLIP2Inference.inference
+import LlavaInference.inference
 from shutil import copyfile, move
 import open_clip
 import math
 import OCRInference.inference
+import WatermarkDetectionInference.inference_simple
 from PIL import ImageDraw
-
+from pathlib import Path, PurePath
 register_heif_opener()
 
 
@@ -78,6 +83,7 @@ class ImageQuailityTool:
     def fieldSet():
         return set(['Q512', 'H', 'W'])
 
+
 class ImageSPAQTool:
     def __init__(self, topDir) -> None:
         self.imageQualityPredictor = SPAQInference.inference_SPAQ.Predictor(
@@ -95,11 +101,40 @@ class ImageSPAQTool:
     @staticmethod
     def fieldSet():
         return set(['SPAQ', 'H', 'W'])
-    
+
+
+class WatermarkDetectTool:
+    def __init__(self, topDir) -> None:
+        self.watermarkPredictor = WatermarkDetectionInference.inference_simple.Predictor(
+            weightsDir="./DLToolWeights/WatermarkDetection")
+
+    def update(self, imageInfo, topDir):
+        img = WatermarkDetectionInference.inference_simple.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+
+        watermarkResult = self.watermarkPredictor.predict(img)
+
+        # bakDir = os.path.join(topDir, 'watermark_result',
+        #                       os.path.dirname(imageInfo['IMG']))
+        # bakImagePath = os.path.join(
+        #     bakDir, os.path.basename(imageInfo['IMG']))
+        # if not os.path.exists(bakDir):
+        #     os.makedirs(bakDir)
+        # if watermarkResult['HAS_WATERMARK']>0.7:
+        #     img.save(bakImagePath)
+
+        imageInfo.update(watermarkResult)
+        return imageInfo
+
+    @staticmethod
+    def fieldSet():
+        return set(['HAS_WATERMARK'])
+
 
 class ImageOCRTool:
     def __init__(self, topDir) -> None:
-        self.imageOCRPredictor = OCRInference.inference.Predictor(weightsDir="./DLToolWeights/EasyOCR")
+        self.imageOCRPredictor = OCRInference.inference.Predictor(
+            weightsDir="./DLToolWeights/EasyOCR")
 
     def update(self, imageInfo, topDir):
         img = OCRInference.inference.pil_loader(
@@ -107,37 +142,37 @@ class ImageOCRTool:
         width, height = img.size
         resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
         poseResult = img.resize(
-                        tuple(math.ceil(x * resize_ratio) for x in img.size),
-                        Image.BICUBIC
-                    )     
-          
+            tuple(math.ceil(x * resize_ratio) for x in img.size),
+            Image.BICUBIC
+        )
+
         width, height = img.size
         bounds = self.imageOCRPredictor.predict(poseResult)
 
-        self.draw_boxes(poseResult, bounds)
         bakDir = os.path.join(topDir, 'ocr_result',
                               os.path.dirname(imageInfo['IMG']))
         bakImagePath = os.path.join(
             bakDir, os.path.basename(imageInfo['IMG']))
         if not os.path.exists(bakDir):
             os.makedirs(bakDir)
-        poseResult.save(bakImagePath)
+        if len(bounds) > 0:
+            self.draw_boxes(poseResult, bounds)
+            poseResult.save(bakImagePath)
 
         imageInfo.update({'W': width, 'H': height})
         return imageInfo
-    
-    def draw_boxes(self,image, bounds, color='yellow', width=6):
+
+    def draw_boxes(self, image, bounds, color='yellow', width=6):
         draw = ImageDraw.Draw(image)
         for bound in bounds:
             p0, p1, p2, p3 = bound[0]
             draw.line([*p0, *p1, *p2, *p3, *p0], fill=color, width=width)
         return image
 
-
     @staticmethod
     def fieldSet():
         return set(['H', 'W'])
-    
+
 
 class JpegQuailityTool:
     def __init__(self, topDir) -> None:
@@ -177,6 +212,25 @@ class ImageAestheticTool:
         return set(['A', 'H', 'W'])
 
 
+class ImageEATAestheticTool:
+    def __init__(self, topDir) -> None:
+        self.imageAestheticPredictor = EATInference.inference.Predictor(
+            weightsDir='./DLToolWeights/EAT')
+
+    def update(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        width, height = img.size
+        score_dict = self.imageAestheticPredictor.predict(img)
+        imageInfo.update({'W': width, 'H': height})
+        imageInfo.update(score_dict)
+        return imageInfo
+
+    @staticmethod
+    def fieldSet():
+        return set(['A_EAT', 'H', 'W'])
+
+
 class ImageSRTool:
     def __init__(self, topDir) -> None:
         self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
@@ -186,28 +240,27 @@ class ImageSRTool:
         img = hpyerIQAInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
-        if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
+        # if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
         # if width*height >1024*1024:
         #     resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
 
         #     img = img.resize(
         #                 tuple(math.ceil(x * resize_ratio) for x in img.size),
         #                 Image.BICUBIC
-        #             )    
-            
-            srImg = self.imageSRPredictor.predict(img)
-            bakDir = os.path.join(topDir, 'raw_before_sr',
-                                os.path.dirname(imageInfo['IMG']))
-            rawImagePath = os.path.join(topDir, imageInfo['IMG'])
-            bakImagePath = os.path.join(
-                bakDir, os.path.basename(imageInfo['IMG']))
-            if not os.path.exists(bakDir):
-                os.makedirs(bakDir)
-            copyfile(rawImagePath, bakImagePath)
-            savedPath = rawImagePath
-            srImg.save(savedPath)
-            width, height = srImg.size
+        #             )
 
+        srImg = self.imageSRPredictor.predict(img)
+        bakDir = os.path.join(topDir, 'raw_before_sr',
+                              os.path.dirname(imageInfo['IMG']))
+        rawImagePath = os.path.join(topDir, imageInfo['IMG'])
+        bakImagePath = os.path.join(
+            bakDir, os.path.basename(imageInfo['IMG']))
+        if not os.path.exists(bakDir):
+            os.makedirs(bakDir)
+        copyfile(rawImagePath, bakImagePath)
+        savedPath = rawImagePath
+        srImg.save(savedPath)
+        width, height = srImg.size
 
         imageInfo.update({'W': width, 'H': height})
         return imageInfo
@@ -216,37 +269,42 @@ class ImageSRTool:
     def fieldSet():
         return set(['H', 'W'])
 
-
-class ImagePoseEstimateTool:
-    def __init__(self, topDir) -> None:
-        self.imagePoseEstPredictor = ViTPoseInference.inference_vitpose_by_easypose.Predictor(
-            weightsDir='./DLToolWeights/EasyPose')
-
-    def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
-            
-        poseResult,preds = self.imagePoseEstPredictor.predict(img)
-        width, height = poseResult.size
-        if width*height >1024*1024:
-            resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
-            poseResult = poseResult.resize(
-                        tuple(math.ceil(x * resize_ratio) for x in img.size),
-                        Image.BICUBIC
-                    )    
-        bakDir = os.path.join(topDir, 'pose_est_result',
-                              os.path.dirname(imageInfo['IMG']))
-        bakImagePath = os.path.join(
-            bakDir, os.path.basename(imageInfo['IMG']))
-        if not os.path.exists(bakDir):
-            os.makedirs(bakDir)
-        poseResult.save(bakImagePath)
-        #imageInfo.update(preds)
-        return imageInfo
-
     @staticmethod
-    def fieldSet():
-        return set(['H', 'W'])
+    def updateCriteria(imageInfo):
+        imageArea = imageInfo['W']*imageInfo['H']
+        return imageArea < 1024*1024 and imageArea > 384*384 and imageInfo['Q512'] > 60
+
+
+# class ImagePoseEstimateTool:
+#     def __init__(self, topDir) -> None:
+#         self.imagePoseEstPredictor = ViTPoseInference.inference_vitpose_by_easypose.Predictor(
+#             weightsDir='./DLToolWeights/EasyPose')
+
+#     def update(self, imageInfo, topDir):
+#         img = hpyerIQAInference.inference.pil_loader(
+#             os.path.join(topDir, imageInfo['IMG']))
+
+#         poseResult,preds = self.imagePoseEstPredictor.predict(img)
+#         width, height = poseResult.size
+#         if width*height >1024*1024:
+#             resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
+#             poseResult = poseResult.resize(
+#                         tuple(math.ceil(x * resize_ratio) for x in img.size),
+#                         Image.BICUBIC
+#                     )
+#         bakDir = os.path.join(topDir, 'pose_est_result',
+#                               os.path.dirname(imageInfo['IMG']))
+#         bakImagePath = os.path.join(
+#             bakDir, os.path.basename(imageInfo['IMG']))
+#         if not os.path.exists(bakDir):
+#             os.makedirs(bakDir)
+#         poseResult.save(bakImagePath)
+#         #imageInfo.update(preds)
+#         return imageInfo
+
+#     @staticmethod
+#     def fieldSet():
+#         return set(['H', 'W'])
 
 class ImageFilterTool:
     def __init__(self, topDir) -> None:
@@ -291,7 +349,7 @@ class ImageFilterTool:
 
 
 class ImageCaptionTool:
-    def __init__(self, topDir, captionModel='BLIP') -> None:
+    def __init__(self, topDir, captionModel='LLAVA') -> None:
         captionFile = os.path.join(topDir, 'CustomCaptionPool.txt')
         if os.path.isfile(captionFile):
             customCaptionPool = []
@@ -307,6 +365,12 @@ class ImageCaptionTool:
         elif captionModel == 'DeepDanbooru':
             self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
                 weightsDir='./DLToolWeights/DeepDanbooru')
+        elif captionModel == 'BLIP2':
+            self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
+                weightsDir='./DLToolWeights')
+        elif captionModel == 'LLAVA':
+            self.imageCaptionPredictor = LlavaInference.inference.Predictor(
+                weightsDir='/large_tmp/')
 
     def update(self, imageInfo, topDir):
         if imageInfo['Q512'] > 35:
@@ -331,9 +395,10 @@ class ImageCaptionTool:
 
 
 class ImageInfoManager:
-    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', processTools=[]) -> None:
+    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', processTools=[], toolConfigYAML=None) -> None:
         self.topDir = topDir
         self.processTools = processTools
+        self.toolConfigYAML = toolConfigYAML
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
         self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
         if os.path.isfile(self.imageInfoFilePath):
@@ -342,6 +407,23 @@ class ImageInfoManager:
         else:
             print('ImageInfo File Not Found. Create one.')
             self.imageInfoList = []
+        self.createProcessTools()
+
+    def createProcessTools(self):
+        if self.toolConfigYAML:
+            print('Use tool config YAML,param processTools has been ignored.')
+            with open(self.toolConfigYAML, 'r') as f:
+                toolsConfig = yaml.safe_load(f)['Tools']
+                toolsConfig = [] if toolsConfig is None else toolsConfig
+
+            processTools = []
+            for toolDict in toolsConfig:
+                toolDictUpdate = {'forceUpdate': False, 'args': {}}
+                toolDictUpdate.update(toolDict)
+                toolDictUpdate['toolClass'] = getattr(
+                    sys.modules[__name__], toolDict['toolClass'])
+                processTools.append(toolDictUpdate)
+            self.processTools = processTools
 
     def saveImageInfoList(self):
         with open(self.imageInfoFilePath, 'w') as f:
@@ -353,6 +435,22 @@ class ImageInfoManager:
         filteredDirList = [pathlib.Path(dirPath).as_posix()
                            for dirPath in filteredDirList]
         for root, dirs, files in os.walk(self.topDir):
+
+            dirRelativepath = pathlib.Path(
+                os.path.relpath(root, self.topDir)).as_posix()
+
+            dirsAfterFilterd = []
+            for d in dirs:
+                detectedFilterDir = False
+                for filterd in filteredDirList:
+                    if PurePath(dirRelativepath+'/'+d) == PurePath(filterd):
+                        detectedFilterDir = True
+                        break
+                if not detectedFilterDir:
+                    dirsAfterFilterd.append(d)
+
+            dirs[:] = dirsAfterFilterd
+
             for filename in files:
                 basename, ext = os.path.splitext(filename)
                 ext = ext.lower()
@@ -363,10 +461,7 @@ class ImageInfoManager:
                     else:
                         fullFilePath = pathlib.Path(
                             os.path.join(root, filename)).as_posix()
-                    dirRelativepath = pathlib.Path(
-                        os.path.relpath(root, self.topDir)).as_posix()
-                    if os.path.dirname(dirRelativepath) in filteredDirList:
-                        continue
+
                     imageList.append(fullFilePath)
         print('%s images found.' % len(imageList))
         return imageList
@@ -376,11 +471,21 @@ class ImageInfoManager:
         for processTool in self.processTools:
             processToolClass = processTool['toolClass']
             processToolNameListDict[processToolClass] = {
-                'fieldSet': processToolClass.fieldSet(), 'forceUpdate': processTool['forceUpdate'], 'itemIdx': []}
+                'fieldSet': processToolClass.fieldSet(),
+                'forceUpdate': processTool['forceUpdate'],
+                'args': processTool['args'],
+                'itemIdx': []}
 
         for idx, imageInfo in enumerate(self.imageInfoList):
             for processTool, processDict in processToolNameListDict.items():
-                if processDict['forceUpdate'] or len(processDict['fieldSet']-set(imageInfo.keys())) > 0:
+                meetUpdateCriteria = True
+                if hasattr(processTool, 'updateCriteria'):
+                    meetUpdateCriteria = processDict['forceUpdate'] or processTool.updateCriteria(
+                        imageInfo)
+                else:
+                    meetUpdateCriteria = processDict['forceUpdate'] or len(
+                        processDict['fieldSet']-set(imageInfo.keys())) > 0
+                if meetUpdateCriteria:
                     processDict['itemIdx'].append(idx)
 
         for processTool, processDict in processToolNameListDict.items():
@@ -390,7 +495,7 @@ class ImageInfoManager:
                 for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                     try:
                         toolInstance.update(
-                            self.imageInfoList[imageInfoIdx], self.topDir)
+                            self.imageInfoList[imageInfoIdx], self.topDir, **processDict['args'])
                     except Exception as e:
                         raise e
                         print('ERROR:%s:%s' %
@@ -413,25 +518,29 @@ class ImageInfoManager:
         newImageItems = actualImagePathSet-orinImageInfoListPathSet
         deletedImageItems = orinImageInfoListPathSet-actualImagePathSet
 
-        if len(deletedImageItems) > 0:
+        deletedImageItemsNum = len(deletedImageItems)
+        if deletedImageItemsNum > 0:
             displayCounter = 10
             for delIdx in sorted([imageFileNameIndexDict[itemRelPath] for itemRelPath in deletedImageItems], reverse=True):
                 if displayCounter > 0:
                     displayCounter = displayCounter - 1
                     print('Del:', self.imageInfoList[delIdx])
                 elif displayCounter == 0:
-                    print('Del: Too much to show...')
+                    print('Del: %d items to be displayed. Too much to show...' %
+                          deletedImageItemsNum)
                     displayCounter = displayCounter - 1
                 self.imageInfoList.pop(delIdx)
 
-        if len(newImageItems) > 0:
+        newImageItemsNum = len(newImageItems)
+        if newImageItemsNum > 0:
             displayCounter = 10
             for newImageRelPath in newImageItems:
                 if displayCounter > 0:
                     displayCounter = displayCounter - 1
                     print('New:', {'IMG': newImageRelPath})
                 elif displayCounter == 0:
-                    print('New: Too much to show...')
+                    print('New: %d items to be displayed. Too much to show...' %
+                          newImageItemsNum)
                     displayCounter = displayCounter - 1
 
                 self.imageInfoList.append({'IMG': newImageRelPath})
@@ -440,38 +549,30 @@ class ImageInfoManager:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dsDir', type=str,
-                        default=r"F:\NSFW_DS\twitter\aaa")
+                        default=r"your dataset dir")
     parser.add_argument('--multiDsDir', type=str,
                         default=None)
+    parser.add_argument('--toolConfig', type=str,
+                        default=None)
     config = parser.parse_args()
-    tools = [
-        {'toolClass': ImageSizeInfoCorrectTool, 'forceUpdate': False},
-        {'toolClass': ImageQuailityTool, 'forceUpdate': False},
-        {'toolClass': ImageAestheticTool, 'forceUpdate': False},
-        #{'toolClass': ImageSRTool, 'forceUpdate': True},
-        #{'toolClass': ImageCaptionTool, 'forceUpdate': False},
-        #{'toolClass': AdditionalMetaInfo, 'forceUpdate': True},
-        #{'toolClass': JpegQuailityTool, 'forceUpdate': True},
-        #{'toolClass': ImagePoseEstimateTool, 'forceUpdate': True},
-        {'toolClass': ImageSPAQTool, 'forceUpdate': True},
-        {'toolClass': ImageFilterTool, 'forceUpdate': True},
-        {'toolClass': ImageOCRTool, 'forceUpdate': True},
-    ]
-    # config.multiDsDir = "True"
+    config.toolConfig = 'MyExtractionPipeline.yaml'
+    config.multiDsDir = False  # "True"
     if config.multiDsDir:
-        with os.scandir(r'F:\NSFW_DS\tumblr') as it:
+        with os.scandir(r'your dataset dir') as it:
             for entry in it:
                 if entry.is_dir() and entry.name != 'original_images':
                     print(entry.path)
 
                     imageInfoManager = ImageInfoManager(
-                        entry.path, processTools=tools)
+                        entry.path, toolConfigYAML=config.toolConfig)
                     imageInfoManager.updateImages(
                         filteredDirList=['raw_before_sr'])
                     imageInfoManager.infoUpdate()
                     imageInfoManager.saveImageInfoList()
     else:
-        imageInfoManager = ImageInfoManager(config.dsDir, processTools=tools)
-        imageInfoManager.updateImages(filteredDirList=['raw_before_sr'])
+        imageInfoManager = ImageInfoManager(
+            config.dsDir, toolConfigYAML=config.toolConfig)
+        imageInfoManager.updateImages(
+            filteredDirList=['raw_before_sr', 'ocr_result',])
         imageInfoManager.infoUpdate()
         imageInfoManager.saveImageInfoList()
