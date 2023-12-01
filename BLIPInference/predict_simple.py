@@ -7,12 +7,11 @@ import clip
 import os
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 
 class Predictor():
-    def __init__(self, weightsDir='.', customCaptionPool=None) -> None:
+    def __init__(self, weightsDir='.', device='cuda',customCaptionPool=None) -> None:
         image_size = 384
+        self.device = device
         self.transform = transforms.Compose([
             transforms.Resize((image_size, image_size),
                               interpolation=InterpolationMode.BICUBIC),
@@ -23,30 +22,30 @@ class Predictor():
 
         model_url = 'https://storage.googleapis.com/sfr-vision-language-research/BLIP/models/model_large_caption.pth'
         med_config_path = os.path.join(
-            os.path.dirname(__file__), 'configs\med_config.json')
+            os.path.dirname(__file__), 'configs/med_config.json')
         self.model = blip_decoder(
             pretrained=model_url, image_size=384, vit='large',
             med_config=med_config_path,
             weights_dir=weightsDir
         )
         self.model.eval()
-        self.model = self.model.to(device)
+        self.model = self.model.to(self.device)
 
         self.model_clip, self.preprocess_clip = clip.load(
-            'ViT-L/14@336px', device=device, jit=False, download_root=weightsDir)
+            'ViT-L/14@336px', device=self.device, jit=False, download_root=weightsDir)
         self.custom_texts = customCaptionPool
         if customCaptionPool:
             self.setCustomCaptionCandidates(customCaptionPool)
 
     def setCustomCaptionCandidates(self, texts):
         self.custom_texts = texts
-        texts = clip.tokenize(texts).to(device)
+        texts = clip.tokenize(texts).to(self.device)
         with torch.no_grad(), torch.cuda.amp.autocast():
             self.custom_text_features = self.model_clip.encode_text(texts)
 
     def _filterByCLIP(self, img, texts, topK=3):
-        image = self.preprocess_clip(img).unsqueeze(0).to(device)
-        text = clip.tokenize(texts).to(device)
+        image = self.preprocess_clip(img).unsqueeze(0).to(self.device)
+        text = clip.tokenize(texts,truncate=True).to(self.device)
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             image_features = self.model_clip.encode_image(image)
@@ -89,18 +88,18 @@ class Predictor():
     def _inference(self, raw_image, model_n, question, strategy):
         raw_image = self._make_square(raw_image)
         if model_n == 'Image Captioning':
-            image = self.transform(raw_image).unsqueeze(0).to(device)
+            image = self.transform(raw_image).unsqueeze(0).to(self.device)
             with torch.no_grad(), torch.cuda.amp.autocast():
                 if strategy == "Beam search":
                     caption = self.model.generate(
-                        image, sample=False, num_beams=10, num_return_sequences=10, max_length=40, min_length=25)
+                        image, sample=False, num_beams=10, num_return_sequences=10, max_length=70, min_length=50)
                 else:
                     caption = self.model.generate(
-                        image, sample=True, top_p=0.9, num_return_sequences=10, max_length=40, min_length=25)
+                        image, sample=True, top_p=0.9, num_return_sequences=10, max_length=70, min_length=50)
                 return self._filterByCLIP(raw_image, caption)
 
         else:
-            image_vq = self.transform_vq(raw_image).unsqueeze(0).to(device)
+            image_vq = self.transform_vq(raw_image).unsqueeze(0).to(self.device)
             with torch.no_grad(), torch.cuda.amp.autocast():
                 answer = self.model_vq(
                     image_vq, question, train=False, inference='generate')

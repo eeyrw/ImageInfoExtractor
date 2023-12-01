@@ -26,7 +26,28 @@ import OCRInference.inference
 import WatermarkDetectionInference.inference_simple
 from PIL import ImageDraw
 from pathlib import Path, PurePath
+import numpy as np
+from torch.utils.data import Dataset, DataLoader
 register_heif_opener()
+
+
+class BatchInferenceDataset(Dataset):
+    def __init__(self, topDir, imageInfoList, indexList, transform):
+        self.transform = transform
+        self.imageInfoList = imageInfoList
+        self.indexList = indexList
+        self.topDir = topDir
+
+    def __len__(self):
+        return len(self.indexList)
+
+    def __getitem__(self, item):
+        idx = self.indexList[item]
+        image_path = os.path.join(self.topDir,
+                                  self.imageInfoList[idx]['IMG'])
+        image = Image.open(image_path).convert('RGB')
+        x = self.transform(image)
+        return idx, x
 
 
 class AdditionalMetaInfo:
@@ -104,9 +125,10 @@ class ImageSPAQTool:
 
 
 class WatermarkDetectTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir, device='cuda') -> None:
         self.watermarkPredictor = WatermarkDetectionInference.inference_simple.Predictor(
-            weightsDir="./DLToolWeights/WatermarkDetection")
+            weightsDir="./DLToolWeights/WatermarkDetection", device=device)
+        self.transform = self.watermarkPredictor.transform
 
     def update(self, imageInfo, topDir):
         img = WatermarkDetectionInference.inference_simple.pil_loader(
@@ -125,6 +147,14 @@ class WatermarkDetectTool:
 
         imageInfo.update(watermarkResult)
         return imageInfo
+    
+    def update_batch(self, imgs):
+        watermarkResults = self.watermarkPredictor.predict_batch(imgs)
+        return watermarkResults
+    
+    @property
+    def supportBatchInference():
+        return True
 
     @staticmethod
     def fieldSet():
@@ -194,9 +224,10 @@ class JpegQuailityTool:
 
 
 class ImageAestheticTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir, device='cuda') -> None:
         self.imageAestheticPredictor = Aesthetic.Predictor(
-            weightsDir='./DLToolWeights/Aesthetic')
+            weightsDir='./DLToolWeights/Aesthetic', device=device)
+        self.transform = self.imageAestheticPredictor.transform
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -206,6 +237,14 @@ class ImageAestheticTool:
         imageInfo.update({'W': width, 'H': height})
         imageInfo.update(score_dict)
         return imageInfo
+
+    def update_batch(self, imgs):
+        score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
+        return score_dict_list
+
+    @property
+    def supportBatchInference():
+        return True
 
     @staticmethod
     def fieldSet():
@@ -213,9 +252,10 @@ class ImageAestheticTool:
 
 
 class ImageEATAestheticTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir, device='cuda') -> None:
         self.imageAestheticPredictor = EATInference.inference.Predictor(
-            weightsDir='./DLToolWeights/EAT')
+            weightsDir='./DLToolWeights/EAT', device=device)
+        self.transform = self.imageAestheticPredictor.transform
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -225,6 +265,14 @@ class ImageEATAestheticTool:
         imageInfo.update({'W': width, 'H': height})
         imageInfo.update(score_dict)
         return imageInfo
+
+    def update_batch(self, imgs):
+        score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
+        return score_dict_list
+
+    @property
+    def supportBatchInference():
+        return True
 
     @staticmethod
     def fieldSet():
@@ -349,7 +397,7 @@ class ImageFilterTool:
 
 
 class ImageCaptionTool:
-    def __init__(self, topDir, captionModel='LLAVA') -> None:
+    def __init__(self, topDir, captionModel='LLAVA',device='cuda') -> None:
         captionFile = os.path.join(topDir, 'CustomCaptionPool.txt')
         if os.path.isfile(captionFile):
             customCaptionPool = []
@@ -361,13 +409,13 @@ class ImageCaptionTool:
             customCaptionPool = None
         if captionModel == 'BLIP':
             self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
-                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP')
+                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP',device=device)
         elif captionModel == 'DeepDanbooru':
             self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
                 weightsDir='./DLToolWeights/DeepDanbooru')
         elif captionModel == 'BLIP2':
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
-                weightsDir='./DLToolWeights')
+                weightsDir='./DLToolWeights',device=device)
         elif captionModel == 'LLAVA':
             self.imageCaptionPredictor = LlavaInference.inference.Predictor(
                 weightsDir='/large_tmp/')
@@ -418,7 +466,8 @@ class ImageInfoManager:
 
             processTools = []
             for toolDict in toolsConfig:
-                toolDictUpdate = {'forceUpdate': False, 'args': {}}
+                toolDictUpdate = {'forceUpdate': False,
+                                  'args': {}, 'batchsize': 1, 'num_workers': 4}
                 toolDictUpdate.update(toolDict)
                 toolDictUpdate['toolClass'] = getattr(
                     sys.modules[__name__], toolDict['toolClass'])
@@ -474,6 +523,8 @@ class ImageInfoManager:
                 'fieldSet': processToolClass.fieldSet(),
                 'forceUpdate': processTool['forceUpdate'],
                 'args': processTool['args'],
+                'batchsize': processTool['batchsize'],
+                'num_workers': processTool['num_workers'],
                 'itemIdx': []}
 
         for idx, imageInfo in enumerate(self.imageInfoList):
@@ -491,18 +542,34 @@ class ImageInfoManager:
         for processTool, processDict in processToolNameListDict.items():
             if len(processDict['itemIdx']) > 0:
                 print('Tool: %s' % processTool.__name__)
-                toolInstance = processTool(self.topDir)
-                for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
-                    try:
-                        toolInstance.update(
-                            self.imageInfoList[imageInfoIdx], self.topDir, **processDict['args'])
-                    except Exception as e:
-                        raise e
-                        print('ERROR:%s:%s' %
-                              (self.imageInfoList[imageInfoIdx], str(e)))
+                toolInstance = processTool(self.topDir, **processDict['args'])
+                if hasattr(processTool, 'supportBatchInference') and processTool.supportBatchInference:
+                    ds = BatchInferenceDataset(
+                        self.topDir, self.imageInfoList, processDict['itemIdx'], toolInstance.transform)
+                    dtldr = DataLoader(ds,
+                                       batch_size=processDict['batchsize'],
+                                       shuffle=False,
+                                       num_workers=processDict['num_workers'],
+                                       drop_last=False)
+                    with tqdm(total=len(ds)) as pbar:
+                        for indices, imgs in dtldr:
+                            updateDictList = toolInstance.update_batch(imgs)
+                            for imageInfoIdx, updateDict in zip(indices, updateDictList):
+                                self.imageInfoList[imageInfoIdx].update(
+                                    updateDict)
+                            pbar.update(len(indices))
+                else:
+                    for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
+                        try:
+                            toolInstance.update(
+                                self.imageInfoList[imageInfoIdx], self.topDir)
+                        except Exception as e:
+                            raise e
+                            print('ERROR:%s:%s' %
+                                  (self.imageInfoList[imageInfoIdx], str(e)))
 
-                    if i % 1000 == 0:
-                        self.saveImageInfoList()
+                        if i % 1000 == 0:
+                            self.saveImageInfoList()
                 self.saveImageInfoList()
             else:
                 print('No update by %s' % processTool.__name__)

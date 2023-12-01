@@ -54,7 +54,21 @@ class MultiDatasetExtractor:
                     dirsHasNotImageInfoJson.append(path)
 
         return dirsHasImageInfoJson, dirsHasNotImageInfoJson
+    
+    def runExtractor(self):
+        for path in self.dirsHasImageInfoJson:
+            print('====Processing %s'%path)
+            dsDir = os.path.dirname(path)
+            toolConfig = 'MyExtractionPipeline.yaml'
+            imageInfoManager = ImageInfoManager(
+                dsDir, toolConfigYAML=toolConfig)
+            imageInfoManager.updateImages(
+                filteredDirList=['raw_before_sr', 'ocr_result'])
+            imageInfoManager.infoUpdate()
+            imageInfoManager.saveImageInfoList()
+
 
 if __name__ == '__main__':
     multiDsExtractor = MultiDatasetExtractor(r'Dataset top dir')
     multiDsExtractor.scanDir(printScanResult=True)
+    multiDsExtractor.runExtractor()
