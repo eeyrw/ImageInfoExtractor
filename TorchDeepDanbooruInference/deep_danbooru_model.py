@@ -192,7 +192,7 @@ class DeepDanbooruModel(nn.Module):
 
     def forward(self, *inputs):
         t_358, = inputs
-        t_359 = t_358.permute(*[0, 3, 1, 2])
+        t_359 = t_358 #t_358.permute(*[0, 3, 1, 2]),Do not permute due to input is BCHW already
         t_359_padded = F.pad(t_359, [2, 3, 2, 3], value=0)
         t_360 = self.n_Conv_0(t_359_padded)
         t_361 = F.relu(t_360)

@@ -147,11 +147,11 @@ class WatermarkDetectTool:
 
         imageInfo.update(watermarkResult)
         return imageInfo
-    
+
     def update_batch(self, imgs):
         watermarkResults = self.watermarkPredictor.predict_batch(imgs)
         return watermarkResults
-    
+
     @property
     def supportBatchInference():
         return True
@@ -396,8 +396,27 @@ class ImageFilterTool:
         return set([])
 
 
+class DeepDanbooruTagTool:
+    def __init__(self, topDir, device='cuda') -> None:
+        self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
+            weightsDir='./DLToolWeights/DeepDanbooru', device=device)
+        self.transform = self.imageCaptionPredictor.transform
+
+    def update_batch(self, imgs):
+        captionDictListList = self.imageCaptionPredictor.predict_batch(imgs)
+        return captionDictListList
+
+    @property
+    def supportBatchInference():
+        return True
+
+    @staticmethod
+    def fieldSet():
+        return set(['DBRU_TAG'])
+
+
 class ImageCaptionTool:
-    def __init__(self, topDir, captionModel='LLAVA',device='cuda') -> None:
+    def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
         captionFile = os.path.join(topDir, 'CustomCaptionPool.txt')
         if os.path.isfile(captionFile):
             customCaptionPool = []
@@ -409,13 +428,10 @@ class ImageCaptionTool:
             customCaptionPool = None
         if captionModel == 'BLIP':
             self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
-                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP',device=device)
-        elif captionModel == 'DeepDanbooru':
-            self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
-                weightsDir='./DLToolWeights/DeepDanbooru')
+                customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP', device=device)
         elif captionModel == 'BLIP2':
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
-                weightsDir='./DLToolWeights',device=device)
+                weightsDir='./DLToolWeights', device=device)
         elif captionModel == 'LLAVA':
             self.imageCaptionPredictor = LlavaInference.inference.Predictor(
                 weightsDir='/large_tmp/')
@@ -436,6 +452,14 @@ class ImageCaptionTool:
                     print('Custom cap: rank %s cap %s' %
                           (captionDict['rank'], captionDict['caption']))
         return imageInfo
+
+    def update_batch(self, imgs):
+        captionDictListList = self.imageCaptionPredictor.predict_batch(imgs)
+        return captionDictListList
+
+    @property
+    def supportBatchInference():
+        return True
 
     @staticmethod
     def fieldSet():
