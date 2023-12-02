@@ -29,10 +29,10 @@ class Predictor():
             weights_dir=weightsDir
         )
         self.model.eval()
-        self.model = self.model.to(self.device)
+        self.model = self.model.to(self.device,dtype=torch.float16)
 
-        self.model_clip, self.preprocess_clip = clip.load(
-            'ViT-L/14@336px', device=self.device, jit=False, download_root=weightsDir)
+        # self.model_clip, self.preprocess_clip = clip.load(
+        #     'ViT-L/14@336px', device=self.device, jit=False, download_root=weightsDir)
         self.custom_texts = customCaptionPool
         if customCaptionPool:
             self.setCustomCaptionCandidates(customCaptionPool)
@@ -107,3 +107,13 @@ class Predictor():
 
     def predict(self, raw_image):
         return self._inference(raw_image, 'Image Captioning', '', 'Nucleus sampling')
+    
+    def predict_batch(self,imgs):
+        imgs = imgs.to(self.device,dtype=torch.float16)
+        batchsize = imgs.shape[0]
+        numOfSentence = 5
+        with torch.no_grad():
+            captions = self.model.generate(
+                    imgs, sample=True, top_p=0.9, num_return_sequences=numOfSentence, max_length=70, min_length=50)
+            
+        return [{'CAP':captions[i*numOfSentence:numOfSentence]} for i in range(batchsize)]

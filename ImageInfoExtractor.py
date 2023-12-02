@@ -28,6 +28,7 @@ from PIL import ImageDraw
 from pathlib import Path, PurePath
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
+import time
 register_heif_opener()
 
 
@@ -429,6 +430,7 @@ class ImageCaptionTool:
         if captionModel == 'BLIP':
             self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
                 customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP', device=device)
+            self.transform = self.imageCaptionPredictor.transform
         elif captionModel == 'BLIP2':
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
@@ -437,25 +439,29 @@ class ImageCaptionTool:
                 weightsDir='/large_tmp/')
 
     def update(self, imageInfo, topDir):
-        if imageInfo['Q512'] > 35:
-            img = hpyerIQAInference.inference.pil_loader(
-                os.path.join(topDir, imageInfo['IMG']))
-            captionDictList = self.imageCaptionPredictor.predict(img)
-            imageInfo.update({'CAP': [captionDict['caption']
-                                      for captionDict in captionDictList]})
-            havePrintFileName = False
-            for captionDict in captionDictList:
-                if captionDict['isCustomCap']:
-                    if not havePrintFileName:
-                        print('File:'+imageInfo['IMG'])
-                        havePrintFileName = True
-                    print('Custom cap: rank %s cap %s' %
-                          (captionDict['rank'], captionDict['caption']))
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        captionDictList = self.imageCaptionPredictor.predict(img)
+        imageInfo.update({'CAP': [captionDict['caption']
+                                  for captionDict in captionDictList]})
+        havePrintFileName = False
+        for captionDict in captionDictList:
+            if captionDict['isCustomCap']:
+                if not havePrintFileName:
+                    print('File:'+imageInfo['IMG'])
+                    havePrintFileName = True
+                print('Custom cap: rank %s cap %s' %
+                      (captionDict['rank'], captionDict['caption']))
         return imageInfo
 
     def update_batch(self, imgs):
         captionDictListList = self.imageCaptionPredictor.predict_batch(imgs)
         return captionDictListList
+
+    @staticmethod
+    def updateCriteria(imageInfo):
+        imageArea = imageInfo['W']*imageInfo['H']
+        return imageArea > 384*384 and imageInfo['Q512'] > 35
 
     @property
     def supportBatchInference():
@@ -576,12 +582,18 @@ class ImageInfoManager:
                                        num_workers=processDict['num_workers'],
                                        drop_last=False)
                     with tqdm(total=len(ds)) as pbar:
+                        lastTs = time.time()
                         for indices, imgs in dtldr:
                             updateDictList = toolInstance.update_batch(imgs)
                             for imageInfoIdx, updateDict in zip(indices, updateDictList):
                                 self.imageInfoList[imageInfoIdx].update(
                                     updateDict)
                             pbar.update(len(indices))
+                            nowTs = time.time()
+                            if nowTs-lastTs>60*60:
+                                lastTs = nowTs
+                                self.saveImageInfoList()
+                            
                 else:
                     for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                         try:
