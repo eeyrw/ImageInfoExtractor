@@ -461,7 +461,9 @@ class ImageCaptionTool:
     @staticmethod
     def updateCriteria(imageInfo):
         imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea > 384*384 and imageInfo['Q512'] > 35
+        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
+            ('CAP' not in imageInfo.keys() or 'CAP' in imageInfo.keys()
+             and len(imageInfo['CAP']) == 0)
 
     @property
     def supportBatchInference():
@@ -590,10 +592,10 @@ class ImageInfoManager:
                                     updateDict)
                             pbar.update(len(indices))
                             nowTs = time.time()
-                            if nowTs-lastTs>60*60:
+                            if nowTs-lastTs > 60*60:
                                 lastTs = nowTs
                                 self.saveImageInfoList()
-                            
+
                 else:
                     for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                         try:

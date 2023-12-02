@@ -7,9 +7,8 @@ import clip
 import os
 
 
-
 class Predictor():
-    def __init__(self, weightsDir='.', device='cuda',customCaptionPool=None) -> None:
+    def __init__(self, weightsDir='.', device='cuda', customCaptionPool=None) -> None:
         image_size = 384
         self.device = device
         self.transform = transforms.Compose([
@@ -29,7 +28,7 @@ class Predictor():
             weights_dir=weightsDir
         )
         self.model.eval()
-        self.model = self.model.to(self.device,dtype=torch.float16)
+        self.model = self.model.to(self.device, dtype=torch.float16)
 
         # self.model_clip, self.preprocess_clip = clip.load(
         #     'ViT-L/14@336px', device=self.device, jit=False, download_root=weightsDir)
@@ -45,7 +44,7 @@ class Predictor():
 
     def _filterByCLIP(self, img, texts, topK=3):
         image = self.preprocess_clip(img).unsqueeze(0).to(self.device)
-        text = clip.tokenize(texts,truncate=True).to(self.device)
+        text = clip.tokenize(texts, truncate=True).to(self.device)
 
         with torch.no_grad(), torch.cuda.amp.autocast():
             image_features = self.model_clip.encode_image(image)
@@ -99,7 +98,8 @@ class Predictor():
                 return self._filterByCLIP(raw_image, caption)
 
         else:
-            image_vq = self.transform_vq(raw_image).unsqueeze(0).to(self.device)
+            image_vq = self.transform_vq(
+                raw_image).unsqueeze(0).to(self.device)
             with torch.no_grad(), torch.cuda.amp.autocast():
                 answer = self.model_vq(
                     image_vq, question, train=False, inference='generate')
@@ -107,13 +107,13 @@ class Predictor():
 
     def predict(self, raw_image):
         return self._inference(raw_image, 'Image Captioning', '', 'Nucleus sampling')
-    
-    def predict_batch(self,imgs):
-        imgs = imgs.to(self.device,dtype=torch.float16)
+
+    def predict_batch(self, imgs):
+        imgs = imgs.to(self.device, dtype=torch.float16)
         batchsize = imgs.shape[0]
         numOfSentence = 5
         with torch.no_grad():
             captions = self.model.generate(
-                    imgs, sample=True, top_p=0.9, num_return_sequences=numOfSentence, max_length=70, min_length=50)
-            
-        return [{'CAP':captions[i*numOfSentence:numOfSentence]} for i in range(batchsize)]
+                imgs, sample=True, top_p=0.9, num_return_sequences=numOfSentence, max_length=70, min_length=50)
+
+        return [{'CAP': captions[i*numOfSentence:i*numOfSentence+numOfSentence]} for i in range(batchsize)]
