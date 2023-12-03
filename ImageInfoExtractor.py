@@ -475,12 +475,15 @@ class ImageCaptionTool:
 
 
 class ImageInfoManager:
-    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', processTools=[], toolConfigYAML=None) -> None:
+    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', 
+                 processTools=[], toolConfigYAML=None,
+                 saveInterval=3600) -> None:
         self.topDir = topDir
         self.processTools = processTools
         self.toolConfigYAML = toolConfigYAML
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
         self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
+        self.saveInterval = saveInterval
         if os.path.isfile(self.imageInfoFilePath):
             with open(self.imageInfoFilePath, 'r') as f:
                 self.imageInfoList = json.load(f)
@@ -592,11 +595,12 @@ class ImageInfoManager:
                                     updateDict)
                             pbar.update(len(indices))
                             nowTs = time.time()
-                            if nowTs-lastTs > 60*60:
+                            if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
                                 self.saveImageInfoList()
 
                 else:
+                    lastTs = time.time()
                     for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                         try:
                             toolInstance.update(
@@ -605,8 +609,9 @@ class ImageInfoManager:
                             raise e
                             print('ERROR:%s:%s' %
                                   (self.imageInfoList[imageInfoIdx], str(e)))
-
-                        if i % 1000 == 0:
+                        nowTs = time.time()
+                        if nowTs-lastTs >= self.saveInterval:
+                            lastTs = nowTs
                             self.saveImageInfoList()
                 self.saveImageInfoList()
             else:
