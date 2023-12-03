@@ -1,0 +1,32 @@
+Tools:
+  - toolClass: ImageSizeInfoCorrectTool
+    forceUpdate: false
+  - toolClass: ImageQuailityTool
+    forceUpdate: false
+  - toolClass: ImageAestheticTool
+    forceUpdate: True
+    batchsize: 32
+    num_workers: 32
+    args:
+      device: cuda:2   
+  - toolClass: ImageEATAestheticTool
+    forceUpdate: True
+    batchsize: 32
+    num_workers: 16
+    args:
+      device: cuda:2        
+  - toolClass: WatermarkDetectTool
+    forceUpdate: True
+    batchsize: 32
+    num_workers: 32
+    args:
+      device: cuda:2
+  - toolClass: ImageSRTool
+    forceUpdate: false       
+  - toolClass: ImageCaptionTool
+    forceUpdate: false
+    batchsize: 6
+    num_workers: 12
+    args:
+      captionModel: BLIP
+      device: cuda:0

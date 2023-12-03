@@ -1,0 +1,16 @@
+import sys
+from pillow_heif import register_heif_opener
+from tqdm import tqdm
+import pathlib
+import argparse
+import json
+import os
+from shutil import copyfile, move
+from PIL import ImageDraw
+from ImageInfoExtractor import ImageInfoManager
+
+from MultiDatasetExtractor import MultiDatasetExtractor
+if __name__ == '__main__':
+    multiDsExtractor = MultiDatasetExtractor(r'YOUR DS DIR')
+    multiDsExtractor.scanDir(printScanResult=True)
+    multiDsExtractor.runExtractor()

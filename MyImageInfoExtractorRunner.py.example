@@ -1,0 +1,11 @@
+from ImageInfoExtractor import ImageInfoManager
+
+if __name__ == '__main__':
+    toolConfig = 'MyExtractionBatchPipeline.yaml'
+    dsDir = r'YOUR DS DIR'
+    imageInfoManager = ImageInfoManager(
+        dsDir, toolConfigYAML=toolConfig)
+    imageInfoManager.updateImages(
+        filteredDirList=['raw_before_sr', 'ocr_result'])
+    imageInfoManager.infoUpdate()
+    imageInfoManager.saveImageInfoList()
