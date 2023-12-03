@@ -18,7 +18,6 @@ import RealCUGANInference.inference_cugan
 import SPAQInference.inference_SPAQ
 import EATInference.inference
 import BLIP2Inference.inference
-import LlavaInference.inference
 from shutil import copyfile, move
 import open_clip
 import math
@@ -435,6 +434,7 @@ class ImageCaptionTool:
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
         elif captionModel == 'LLAVA':
+            import LlavaInference.inference
             self.imageCaptionPredictor = LlavaInference.inference.Predictor(
                 weightsDir='/large_tmp/')
 
@@ -559,8 +559,9 @@ class ImageInfoManager:
                 'num_workers': processTool['num_workers'],
                 'itemIdx': []}
 
-        for idx, imageInfo in enumerate(self.imageInfoList):
-            for processTool, processDict in processToolNameListDict.items():
+        
+        for processTool, processDict in processToolNameListDict.items():
+            for idx, imageInfo in enumerate(self.imageInfoList):
                 meetUpdateCriteria = True
                 if hasattr(processTool, 'updateCriteria'):
                     meetUpdateCriteria = processDict['forceUpdate'] or processTool.updateCriteria(
@@ -571,7 +572,6 @@ class ImageInfoManager:
                 if meetUpdateCriteria:
                     processDict['itemIdx'].append(idx)
 
-        for processTool, processDict in processToolNameListDict.items():
             if len(processDict['itemIdx']) > 0:
                 print('Tool: %s' % processTool.__name__)
                 toolInstance = processTool(self.topDir, **processDict['args'])
