@@ -87,19 +87,25 @@ class ImageSizeInfoCorrectTool:
 
 
 class ImageQuailityTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir,device='cuda') -> None:
         self.imageQualityPredictor = hpyerIQAInference.inference.Predictor(
-            weightsDir='./DLToolWeights/HyperIQA')
+            weightsDir='./DLToolWeights/HyperIQA',device=device)
+        self.transform = self.imageQualityPredictor.transform
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
-        score_dict = self.imageQualityPredictor.predict_multiscale(img)
+        score_dict = self.imageQualityPredictor.predict(img)
         imageInfo.update({'W': width, 'H': height})
         imageInfo.update(score_dict)
         return imageInfo
-
+    
+    def update_batch(self, imgs):
+        return self.imageQualityPredictor.predict_batch(imgs)
+    @property
+    def supportBatchInference():
+        return True
     @staticmethod
     def fieldSet():
         return set(['Q512', 'H', 'W'])
