@@ -119,3 +119,20 @@ class ImageDsCreator:
 
     def addImageSet(self, jsonPath, criteria, wantedNum):
         self.imageSetList.append((jsonPath, criteria, wantedNum))
+
+    def exportImageInfoList(self, jsonName='ImageInfoSelected.json',useJsonl=False):
+        for imageRoot, imageInfoList in self.imageInfoListList:
+            relPathOfDir = os.path.relpath(imageRoot,self.outputDir)
+            for singleImageInfo in imageInfoList:
+                singleImageInfo['IMG'] = os.path.join(relPathOfDir,singleImageInfo['IMG'])
+                self.imageInfoList.append(singleImageInfo)
+            
+        exportPath = os.path.join(self.outputDir, jsonName)
+        if useJsonl:
+            import jsonlines
+            exportPath =  os.path.splitext(exportPath)[0]+'.jsonl'
+            with jsonlines.open(exportPath, mode='w') as writer:
+                writer.write(self.imageInfoList)
+        else:
+            with open(exportPath, 'w') as f:
+                json.dump(self.imageInfoList, f)
