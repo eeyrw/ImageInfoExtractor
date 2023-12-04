@@ -8,6 +8,7 @@ import os
 from shutil import copyfile, move
 from PIL import ImageDraw
 from ImageInfoExtractor import ImageInfoManager
+from ImageSelect import ImageDsCreator
 
 
 class MultiDatasetExtractor:
@@ -16,24 +17,24 @@ class MultiDatasetExtractor:
         self.dirsHasImageInfoJson = []
         self.dirsHasNotImageInfoJson = []
 
-    def scanDir(self,printScanResult=False):
+    def scanDir(self, printScanResult=False):
         self.dirsHasImageInfoJson, self.dirsHasNotImageInfoJson = self.detectImageInfoFolder(
             self.topDir)
-        
+
         if printScanResult:
-            print('Scan Result (--: Has ImageInfoJson file, ??: Has not ImageInfoJson file)')
+            print(
+                'Scan Result (--: Has ImageInfoJson file, ??: Has not ImageInfoJson file)')
             for dir in self.dirsHasImageInfoJson:
-                print('--',dir)
+                print('--', dir)
             for dir in self.dirsHasNotImageInfoJson:
-                print('??',dir)
-        
+                print('??', dir)
 
     def detectImageInfoFolder(self, path, ImageInfoJsonFileName='ImageInfo.json'):
         dirsHasImageInfoJson = []
         dirsHasNotImageInfoJson = []
         dir_HasImageInfo = {}
 
-        for entry  in os.scandir(path):
+        for entry in os.scandir(path):
             file_path = entry.path
             if entry.is_file(follow_symlinks=False) and os.path.basename(file_path) == ImageInfoJsonFileName:
                 dirsHasImageInfoJson.append(file_path)
@@ -54,18 +55,31 @@ class MultiDatasetExtractor:
                     dirsHasNotImageInfoJson.append(path)
 
         return dirsHasImageInfoJson, dirsHasNotImageInfoJson
-    
+
     def runExtractor(self):
         for path in self.dirsHasImageInfoJson:
-            print('====Processing %s'%path)
+            print('====Processing %s' % path)
             dsDir = os.path.dirname(path)
-            toolConfig = 'MyExtractionPipeline.yaml'
+            toolConfig = 'MyExtractionBatchPipeline.yaml'
             imageInfoManager = ImageInfoManager(
                 dsDir, toolConfigYAML=toolConfig)
             imageInfoManager.updateImages(
                 filteredDirList=['raw_before_sr', 'ocr_result'])
             imageInfoManager.infoUpdate()
             imageInfoManager.saveImageInfoList()
+
+    def genSelectedImageInfoJson(self):
+        imgDsCreator = ImageDsCreator(self.topDir)
+        def criteria(singleImageInfo): return singleImageInfo['Q512'] > 40 and singleImageInfo['H'] * \
+            singleImageInfo['W'] >= 1024 * \
+            1024 and singleImageInfo['HAS_WATERMARK'] < 0.7
+        for path in self.dirsHasImageInfoJson:
+            imgDsCreator.addImageSet(path, criteria, 5000000)
+
+        imgDsCreator.filterImageInfoList()
+        imgDsCreator.exportImageInfoList(useJsonl=True)
+
+
 
 
 if __name__ == '__main__':
