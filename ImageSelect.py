@@ -29,13 +29,15 @@ class ImageDsCreator:
                 imageInfo = json.load(f)
             filterList = [
                 singleImageInfo for singleImageInfo in imageInfo if criteria(singleImageInfo)]
-
-            print('Images satisfy criteria:', len(filterList))
-
+            print('Choose from: %s'%jsonPath)
             if len(filterList) < wantedNum:
-                print('Wanted num > selected num!')
+                print('Wanted num > Chosen num!')
             else:
                 filterList = random.sample(filterList, wantedNum)
+            numChosen = len(filterList)
+            numTotal = len(imageInfo)
+            print('  Chosen: %d\n  Total: %d\n  Chosen proportion:%.3f'%(numChosen,numTotal,numChosen/numTotal))
+
             totalImageNum = totalImageNum + len(filterList)
             self.imageInfoListList.append(
                 (os.path.dirname(jsonPath), filterList))
