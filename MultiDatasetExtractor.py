@@ -68,7 +68,7 @@ class MultiDatasetExtractor:
             imageInfoManager.infoUpdate()
             imageInfoManager.saveImageInfoList()
 
-    def genSelectedImageInfoJson(self):
+    def genSelectedImageInfoJson(self,outputName='ImageInfoSelected.json'):
         imgDsCreator = ImageDsCreator(self.topDir)
         def criteria(singleImageInfo): return singleImageInfo['Q512'] > 40 and singleImageInfo['H'] * \
             singleImageInfo['W'] >= 1024 * \
@@ -77,7 +77,7 @@ class MultiDatasetExtractor:
             imgDsCreator.addImageSet(path, criteria, 5000000)
 
         imgDsCreator.filterImageInfoList()
-        imgDsCreator.exportImageInfoList(useJsonl=True)
+        imgDsCreator.exportImageInfoList(jsonName=outputName,useJsonl=False)
 
 
 
