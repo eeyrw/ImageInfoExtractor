@@ -19,11 +19,8 @@
 
 
 from __future__ import annotations
-from pillow_heif import register_heif_opener
 import os
-import string
 
-import gradio as gr
 import PIL.Image
 import torch
 from transformers import Blip2Processor, Blip2ForConditionalGeneration
