@@ -1,5 +1,3 @@
-import torch
-import torchvision
 import easyocr
 from PIL import Image
 import os

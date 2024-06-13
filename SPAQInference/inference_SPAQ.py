@@ -1,12 +1,6 @@
-import cv2
 import torch
-import torchvision
-import onnxruntime as ort
-from yacs.config import CfgNode as CN
-import numpy as np
 from PIL import Image
 import os
-import cv2
 from .MT_A_demo import MTA
 from .Prepare_image import Image_load
 
