@@ -1,15 +1,7 @@
-import sys
-from pillow_heif import register_heif_opener
-from tqdm import tqdm
-import pathlib
-import argparse
-import json
+import zipfile
 import os
-from shutil import copyfile, move
-from PIL import ImageDraw
 from ImageInfoExtractor import ImageInfoManager
 from ImageSelect import ImageDsCreator
-
 
 class MultiDatasetExtractor:
     def __init__(self, topDir) -> None:
@@ -60,7 +52,18 @@ class MultiDatasetExtractor:
         for path in self.dirsHasImageInfoJson:
             print('====Processing %s' % path)
             dsDir = os.path.dirname(path)
-            toolConfig = 'MyExtractionBatchPipeline.yaml'
+            toolConfig = 'TaskPipelines/MyExtractionTestPipeline.yaml'
+            imageInfoManager = ImageInfoManager(
+                dsDir, toolConfigYAML=toolConfig)
+            imageInfoManager.updateImages(
+                filteredDirList=['raw_before_sr', 'ocr_result'])
+            imageInfoManager.infoUpdate()
+            imageInfoManager.saveImageInfoList()
+
+        for path in self.dirsHasNotImageInfoJson:
+            print('====Processing %s' % path)
+            dsDir = path
+            toolConfig = 'TaskPipelines/MyExtractionTestPipeline.yaml'
             imageInfoManager = ImageInfoManager(
                 dsDir, toolConfigYAML=toolConfig)
             imageInfoManager.updateImages(
@@ -79,7 +82,10 @@ class MultiDatasetExtractor:
         imgDsCreator.filterImageInfoList()
         imgDsCreator.exportImageInfoList(jsonName=outputName,useJsonl=False)
 
-
+    def packImageInfoJsonFiles(self, outputTarPath):
+        with zipfile.ZipFile(outputTarPath+'.zip','w') as myzip:
+            for path in self.dirsHasImageInfoJson:
+                myzip.write(path,compress_type=zipfile.ZIP_DEFLATED)
 
 
 if __name__ == '__main__':
