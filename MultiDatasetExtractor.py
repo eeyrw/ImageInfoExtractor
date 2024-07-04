@@ -48,11 +48,10 @@ class MultiDatasetExtractor:
 
         return dirsHasImageInfoJson, dirsHasNotImageInfoJson
 
-    def runExtractor(self):
+    def runExtractor(self,toolConfig):
         for path in self.dirsHasImageInfoJson:
             print('====Processing %s' % path)
             dsDir = os.path.dirname(path)
-            toolConfig = 'TaskPipelines/MyExtractionTestPipeline.yaml'
             imageInfoManager = ImageInfoManager(
                 dsDir, toolConfigYAML=toolConfig)
             imageInfoManager.updateImages(
@@ -63,7 +62,6 @@ class MultiDatasetExtractor:
         for path in self.dirsHasNotImageInfoJson:
             print('====Processing %s' % path)
             dsDir = path
-            toolConfig = 'TaskPipelines/MyExtractionTestPipeline.yaml'
             imageInfoManager = ImageInfoManager(
                 dsDir, toolConfigYAML=toolConfig)
             imageInfoManager.updateImages(
@@ -74,8 +72,8 @@ class MultiDatasetExtractor:
     def genSelectedImageInfoJson(self,outputName='ImageInfoSelected.json'):
         imgDsCreator = ImageDsCreator(self.topDir)
         def criteria(singleImageInfo): return singleImageInfo['Q512'] > 40 and singleImageInfo['H'] * \
-            singleImageInfo['W'] >= 1024 * \
-            1024 and singleImageInfo['HAS_WATERMARK'] < 0.7
+            singleImageInfo['W'] >= 768 * \
+            768
         for path in self.dirsHasImageInfoJson:
             imgDsCreator.addImageSet(path, criteria, 5000000)
 
