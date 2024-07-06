@@ -1,3 +1,4 @@
+import pathlib
 import zipfile
 import os
 from ImageInfoExtractor import ImageInfoManager
@@ -69,13 +70,31 @@ class MultiDatasetExtractor:
             imageInfoManager.infoUpdate()
             imageInfoManager.saveImageInfoList()
 
-    def genSelectedImageInfoJson(self,outputName='ImageInfoSelected.json'):
+    def isInFilterDir(self,dir,filteredDirList):
+
+        filteredDirList = [pathlib.Path(dirPath)
+                           for dirPath in filteredDirList]
+        dirRelativepath = pathlib.Path(
+            os.path.relpath(dir, self.topDir))
+
+        detectedFilterDir = False
+        for filterd in filteredDirList:
+            if filterd in dirRelativepath.parents:
+                detectedFilterDir = True
+                break
+        return detectedFilterDir
+            
+
+    def genSelectedImageInfoJson(self,outputName='ImageInfoSelected.json',filterDirList=[]):
         imgDsCreator = ImageDsCreator(self.topDir)
         def criteria(singleImageInfo): return singleImageInfo['Q512'] > 40 and singleImageInfo['H'] * \
             singleImageInfo['W'] >= 768 * \
             768
         for path in self.dirsHasImageInfoJson:
-            imgDsCreator.addImageSet(path, criteria, 5000000)
+            if not self.isInFilterDir(os.path.dirname(path),filterDirList):
+                imgDsCreator.addImageSet(path, criteria, 5000000)
+            else:
+                print(f'Skip {path}')
 
         imgDsCreator.filterImageInfoList()
         imgDsCreator.exportImageInfoList(jsonName=outputName,useJsonl=False)
