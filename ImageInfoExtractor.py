@@ -18,8 +18,10 @@ import RealCUGANInference.inference_cugan
 import SPAQInference.inference_SPAQ
 import EATInference.inference
 import BLIP2Inference.inference
+import MiniCPMLlama3V25Inference.inference
+import SmartCropInference.inference
 from shutil import copyfile, move
-import open_clip
+# import open_clip
 import math
 import OCRInference.inference
 import WatermarkDetectionInference.inference_simple
@@ -28,6 +30,12 @@ from pathlib import Path, PurePath
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import time
+from torch.multiprocessing import Pool, Process, set_start_method
+try:
+     set_start_method('spawn')
+except RuntimeError:
+    pass
+
 register_heif_opener()
 
 
@@ -93,17 +101,20 @@ class ImageQuailityTool:
         self.transform = self.imageQualityPredictor.transform
 
     def update(self, imageInfo, topDir):
+        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+        return imageInfo
+    
+    def getUpdateDict(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(score_dict)
-        return imageInfo
-    
+        score_dict.update({'W': width, 'H': height})
+        return score_dict
+
     def update_batch(self, imgs):
         return self.imageQualityPredictor.predict_batch(imgs)
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
     @staticmethod
@@ -117,14 +128,17 @@ class ImageSPAQTool:
             weightsDir='./DLToolWeights/SPAQ')
 
     def update(self, imageInfo, topDir):
+        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+        return imageInfo
+    
+    def getUpdateDict(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(score_dict)
-        return imageInfo
-
+        score_dict.update({'W': width, 'H': height})
+        return score_dict
+    
     @staticmethod
     def fieldSet():
         return set(['SPAQ', 'H', 'W'])
@@ -158,13 +172,36 @@ class WatermarkDetectTool:
         watermarkResults = self.watermarkPredictor.predict_batch(imgs)
         return watermarkResults
 
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
 
     @staticmethod
     def fieldSet():
         return set(['HAS_WATERMARK'])
+
+
+class SmartCropTool:
+    def __init__(self, topDir, device='cuda') -> None:
+        self.smartCropPredictor =SmartCropInference.inference.Predictor(
+            weightsDir="./DLToolWeights/SmartCrop", device=device)
+
+    def update(self, imageInfo, topDir):
+        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+        return imageInfo
+    
+    def getUpdateDict(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        return self.smartCropPredictor.predict(img)
+
+    @staticmethod
+    def supportBatchInference():
+        return False
+
+    @staticmethod
+    def fieldSet():
+        return set(['A_CENTER'])
 
 
 class ImageOCRTool:
@@ -248,7 +285,7 @@ class ImageAestheticTool:
         score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
         return score_dict_list
 
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
 
@@ -276,7 +313,7 @@ class ImageEATAestheticTool:
         score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
         return score_dict_list
 
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
 
@@ -360,46 +397,46 @@ class ImageSRTool:
 #     def fieldSet():
 #         return set(['H', 'W'])
 
-class ImageFilterTool:
-    def __init__(self, topDir) -> None:
-        self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k',
-                                                                               cache_dir='./DLToolWeights/OpenCLIP')
-        self.tokenizer = open_clip.get_tokenizer(
-            'ViT-H-14')
-        self.model.to('cuda')
+# class ImageFilterTool:
+#     def __init__(self, topDir) -> None:
+#         self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k',
+#                                                                                cache_dir='./DLToolWeights/OpenCLIP')
+#         self.tokenizer = open_clip.get_tokenizer(
+#             'ViT-H-14')
+#         self.model.to('cuda')
 
-    def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+#     def update(self, imageInfo, topDir):
+#         img = hpyerIQAInference.inference.pil_loader(
+#             os.path.join(topDir, imageInfo['IMG']))
 
-        img = self.preprocess(img).unsqueeze(0).to('cuda')
-        text = self.tokenizer(
-            ["draft sketch", "finshed work"]).to('cuda')
+#         img = self.preprocess(img).unsqueeze(0).to('cuda')
+#         text = self.tokenizer(
+#             ["draft sketch", "finshed work"]).to('cuda')
 
-        import torch
-        with torch.no_grad(), torch.cuda.amp.autocast():
-            image_features = self.model.encode_image(img)
-            text_features = self.model.encode_text(text)
-            image_features /= image_features.norm(dim=-1, keepdim=True)
-            text_features /= text_features.norm(dim=-1, keepdim=True)
-            text_probs = (100.0 * image_features @
-                          text_features.T).softmax(dim=-1)[0]
-            idx = torch.argmax(text_probs)
-            if idx == 0:
-                bakDir = os.path.join(topDir, 'raw_before_filter',
-                                      os.path.dirname(imageInfo['IMG']))
-                rawImagePath = os.path.join(topDir, imageInfo['IMG'])
-                print('Filter out:%s' % rawImagePath)
-                bakImagePath = os.path.join(
-                    bakDir, os.path.basename(imageInfo['IMG']))
-                if not os.path.exists(bakDir):
-                    os.makedirs(bakDir)
-                move(rawImagePath, bakImagePath)
-            return imageInfo
+#         import torch
+#         with torch.no_grad(), torch.cuda.amp.autocast():
+#             image_features = self.model.encode_image(img)
+#             text_features = self.model.encode_text(text)
+#             image_features /= image_features.norm(dim=-1, keepdim=True)
+#             text_features /= text_features.norm(dim=-1, keepdim=True)
+#             text_probs = (100.0 * image_features @
+#                           text_features.T).softmax(dim=-1)[0]
+#             idx = torch.argmax(text_probs)
+#             if idx == 0:
+#                 bakDir = os.path.join(topDir, 'raw_before_filter',
+#                                       os.path.dirname(imageInfo['IMG']))
+#                 rawImagePath = os.path.join(topDir, imageInfo['IMG'])
+#                 print('Filter out:%s' % rawImagePath)
+#                 bakImagePath = os.path.join(
+#                     bakDir, os.path.basename(imageInfo['IMG']))
+#                 if not os.path.exists(bakDir):
+#                     os.makedirs(bakDir)
+#                 move(rawImagePath, bakImagePath)
+#             return imageInfo
 
-    @staticmethod
-    def fieldSet():
-        return set([])
+#     @staticmethod
+#     def fieldSet():
+#         return set([])
 
 
 class DeepDanbooruTagTool:
@@ -412,14 +449,48 @@ class DeepDanbooruTagTool:
         captionDictListList = self.imageCaptionPredictor.predict_batch(imgs)
         return captionDictListList
 
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
 
     @staticmethod
     def fieldSet():
         return set(['DBRU_TAG'])
+    
+class ImageHQCaptionTool:
+    def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
+        if captionModel == 'MiniCPMLlama3V25':
+            self.imageCaptionPredictor = MiniCPMLlama3V25Inference.inference.Predictor(
+                weightsDir='./DLToolWeights', device=device)
 
+    def update(self, imageInfo, topDir):
+        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+        return imageInfo
+
+    def getUpdateDict(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        captionDictList = self.imageCaptionPredictor.predict(img)
+        return {'HQ_CAP': [captionDict['caption']
+                                  for captionDict in captionDictList]}
+
+    def update_batch(self, imgs):
+        raise NotImplementedError
+
+    @staticmethod
+    def updateCriteria(imageInfo):
+        imageArea = imageInfo['W']*imageInfo['H']
+        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
+            ('HQ_CAP' not in imageInfo.keys() or 'HQ_CAP' in imageInfo.keys()
+             and len(imageInfo['HQ_CAP']) == 0)
+
+    @staticmethod
+    def supportBatchInference():
+        return False
+
+    @staticmethod
+    def fieldSet():
+        return set(['HQ_CAP'])
 
 class ImageCaptionTool:
     def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
@@ -471,7 +542,7 @@ class ImageCaptionTool:
             ('CAP' not in imageInfo.keys() or 'CAP' in imageInfo.keys()
              and len(imageInfo['CAP']) == 0)
 
-    @property
+    @staticmethod
     def supportBatchInference():
         return True
 
@@ -507,7 +578,7 @@ class ImageInfoManager:
 
             processTools = []
             for toolDict in toolsConfig:
-                toolDictUpdate = {'forceUpdate': False,
+                toolDictUpdate = {'forceUpdate': False,'multiGPUs':None,
                                   'args': {}, 'batchsize': 1, 'num_workers': 4}
                 toolDictUpdate.update(toolDict)
                 toolDictUpdate['toolClass'] = getattr(
@@ -555,7 +626,22 @@ class ImageInfoManager:
                     imageList.append(fullFilePath)
         print('%s images found.' % len(imageList))
         return imageList
-
+    @staticmethod
+    def processFunc(param):
+        itemIdcs,toolClass,topDir,device,imageInfoList,toolArgs = param
+        toolArgs['device'] = device
+        toolInstance = toolClass(topDir, **toolArgs)
+        updateDictIdxList = []
+        for i, imageInfoIdx in enumerate(itemIdcs):
+            try:
+                updateDictIdxList.append((imageInfoIdx,toolInstance.getUpdateDict(
+                    imageInfoList[imageInfoIdx], topDir)))
+            except Exception as e:
+                raise e
+                print('ERROR:%s:%s' %
+                    (imageInfoList[imageInfoIdx], str(e)))
+        return updateDictIdxList
+                
     def infoUpdate(self):
         processToolNameListDict = {}
         for processTool in self.processTools:
@@ -566,6 +652,7 @@ class ImageInfoManager:
                 'args': processTool['args'],
                 'batchsize': processTool['batchsize'],
                 'num_workers': processTool['num_workers'],
+                'multiGPUs': processTool['multiGPUs'],
                 'itemIdx': []}
 
         
@@ -583,42 +670,70 @@ class ImageInfoManager:
 
             if len(processDict['itemIdx']) > 0:
                 print('Tool: %s' % processTool.__name__)
-                toolInstance = processTool(self.topDir, **processDict['args'])
-                if hasattr(processTool, 'supportBatchInference') and processTool.supportBatchInference:
-                    ds = BatchInferenceDataset(
-                        self.topDir, self.imageInfoList, processDict['itemIdx'], toolInstance.transform)
-                    dtldr = DataLoader(ds,
-                                       batch_size=processDict['batchsize'],
-                                       shuffle=False,
-                                       num_workers=processDict['num_workers'],
-                                       drop_last=False)
-                    with tqdm(total=len(ds)) as pbar:
+                if not processDict['multiGPUs']:
+                    toolInstance = processTool(self.topDir, **processDict['args'])
+                    if hasattr(processTool, 'supportBatchInference') and processTool.supportBatchInference():
+                        ds = BatchInferenceDataset(
+                            self.topDir, self.imageInfoList, processDict['itemIdx'], toolInstance.transform)
+                        dtldr = DataLoader(ds,
+                                        batch_size=processDict['batchsize'],
+                                        shuffle=False,
+                                        num_workers=processDict['num_workers'],
+                                        drop_last=False)
+                        with tqdm(total=len(ds)) as pbar:
+                            lastTs = time.time()
+                            for indices, imgs in dtldr:
+                                updateDictList = toolInstance.update_batch(imgs)
+                                for imageInfoIdx, updateDict in zip(indices, updateDictList):
+                                    self.imageInfoList[imageInfoIdx].update(
+                                        updateDict)
+                                pbar.update(len(indices))
+                                nowTs = time.time()
+                                if nowTs-lastTs >= self.saveInterval:
+                                    lastTs = nowTs
+                                    self.saveImageInfoList()
+                    else:
                         lastTs = time.time()
-                        for indices, imgs in dtldr:
-                            updateDictList = toolInstance.update_batch(imgs)
-                            for imageInfoIdx, updateDict in zip(indices, updateDictList):
-                                self.imageInfoList[imageInfoIdx].update(
-                                    updateDict)
-                            pbar.update(len(indices))
+                        for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
+                            try:
+                                toolInstance.update(
+                                    self.imageInfoList[imageInfoIdx], self.topDir)
+                            except Exception as e:
+                                raise e
+                                print('ERROR:%s:%s' %
+                                    (self.imageInfoList[imageInfoIdx], str(e)))
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
                                 self.saveImageInfoList()
-
                 else:
                     lastTs = time.time()
-                    for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
-                        try:
-                            toolInstance.update(
-                                self.imageInfoList[imageInfoIdx], self.topDir)
-                        except Exception as e:
-                            raise e
-                            print('ERROR:%s:%s' %
-                                  (self.imageInfoList[imageInfoIdx], str(e)))
-                        nowTs = time.time()
-                        if nowTs-lastTs >= self.saveInterval:
-                            lastTs = nowTs
-                            self.saveImageInfoList()
+                    tasks = processDict['itemIdx']
+                    woker = processDict['multiGPUs']
+                    wokerNum = len(woker)
+                    taskNum = len(tasks)
+                    divideStep = math.ceil(taskNum/wokerNum)
+                    subLists=[(tasks[i:i+divideStep],
+                               processTool,
+                               self.topDir,
+                               'cuda:%d'%devNum,
+                               self.imageInfoList,
+                               processDict['args']) 
+                              for i,devNum  in zip(range(0, taskNum, divideStep),woker)]
+
+                    print("MultiGPUs: %d task(s) assigned to %d workers."%(taskNum,wokerNum))
+                    for param in subLists:
+                        tasks,_,_,device,_,_ = param
+                        print('Worker %s: %d'%(device,len(tasks)))
+
+                    with Pool(wokerNum) as p:
+                        for updateDictIdxList in tqdm(p.imap(self.processFunc, subLists), total=len(subLists)):
+                            for imageInfoIdx, updateDict in updateDictIdxList:
+                                self.imageInfoList[imageInfoIdx].update(updateDict)
+                            nowTs = time.time()
+                            if nowTs-lastTs >= self.saveInterval:
+                                lastTs = nowTs
+                                self.saveImageInfoList()            
                 self.saveImageInfoList()
             else:
                 print('No update by %s' % processTool.__name__)
