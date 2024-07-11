@@ -11,6 +11,7 @@ import FBCNNInference.inference
 import BLIPInference.predict_simple
 from PIL import Image
 import TorchDeepDanbooruInference.inference
+import WDVitTaggerV3.inference
 import Aesthetic
 import RealESRGANInference.inference_realesrgan
 import RealCUGANInference.inference_cugan
@@ -441,8 +442,8 @@ class ImageSRTool:
 
 class DeepDanbooruTagTool:
     def __init__(self, topDir, device='cuda') -> None:
-        self.imageCaptionPredictor = TorchDeepDanbooruInference.inference.Predictor(
-            weightsDir='./DLToolWeights/DeepDanbooru', device=device)
+        self.imageCaptionPredictor = WDVitTaggerV3.inference.Predictor(
+            weightsDir='./DLToolWeights', device=device)
         self.transform = self.imageCaptionPredictor.transform
 
     def update_batch(self, imgs):
@@ -452,6 +453,13 @@ class DeepDanbooruTagTool:
     @staticmethod
     def supportBatchInference():
         return True
+    
+    @staticmethod
+    def updateCriteria(imageInfo):
+        imageArea = imageInfo['W']*imageInfo['H']
+        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
+            ('DBRU_TAG' not in imageInfo.keys() or 'DBRU_TAG' in imageInfo.keys()
+             and len(imageInfo['DBRU_TAG']) == 0)
 
     @staticmethod
     def fieldSet():
