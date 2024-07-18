@@ -15,7 +15,7 @@ import WDVitTaggerV3.inference
 import Aesthetic
 import RealESRGANInference.inference_realesrgan
 import RealCUGANInference.inference_cugan
-# import ViTPoseInference.inference_vitpose_by_easypose
+import RTMPoseInference.inference
 import SPAQInference.inference_SPAQ
 import EATInference.inference
 import BLIP2Inference.inference
@@ -367,36 +367,36 @@ class ImageSRTool:
         return imageArea < 1024*1024 and imageArea > 384*384 and imageInfo['Q512'] > 60
 
 
-# class ImagePoseEstimateTool:
-#     def __init__(self, topDir) -> None:
-#         self.imagePoseEstPredictor = ViTPoseInference.inference_vitpose_by_easypose.Predictor(
-#             weightsDir='./DLToolWeights/EasyPose')
+class ImagePoseEstimateTool:
+    def __init__(self, topDir) -> None:
+        self.imagePoseEstPredictor = RTMPoseInference.inference.Predictor(
+            weightsDir='./DLToolWeights')
 
-#     def update(self, imageInfo, topDir):
-#         img = hpyerIQAInference.inference.pil_loader(
-#             os.path.join(topDir, imageInfo['IMG']))
+    def update(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
 
-#         poseResult,preds = self.imagePoseEstPredictor.predict(img)
-#         width, height = poseResult.size
-#         if width*height >1024*1024:
-#             resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
-#             poseResult = poseResult.resize(
-#                         tuple(math.ceil(x * resize_ratio) for x in img.size),
-#                         Image.BICUBIC
-#                     )
-#         bakDir = os.path.join(topDir, 'pose_est_result',
-#                               os.path.dirname(imageInfo['IMG']))
-#         bakImagePath = os.path.join(
-#             bakDir, os.path.basename(imageInfo['IMG']))
-#         if not os.path.exists(bakDir):
-#             os.makedirs(bakDir)
-#         poseResult.save(bakImagePath)
-#         #imageInfo.update(preds)
-#         return imageInfo
+        preds = self.imagePoseEstPredictor.predict(img)
+        # width, height = poseResult.size
+        # if width*height >1024*1024:
+        #     resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
+        #     poseResult = poseResult.resize(
+        #                 tuple(math.ceil(x * resize_ratio) for x in img.size),
+        #                 Image.BICUBIC
+        #             )
+        # bakDir = os.path.join(topDir, 'pose_est_result',
+        #                       os.path.dirname(imageInfo['IMG']))
+        # bakImagePath = os.path.join(
+        #     bakDir, os.path.basename(imageInfo['IMG']))
+        # if not os.path.exists(bakDir):
+        #     os.makedirs(bakDir)
+        # poseResult.save(bakImagePath)
+        imageInfo.update(preds)
+        return imageInfo
 
-#     @staticmethod
-#     def fieldSet():
-#         return set(['H', 'W'])
+    @staticmethod
+    def fieldSet():
+        return set(['POSE_KPTS'])
 
 # class ImageFilterTool:
 #     def __init__(self, topDir) -> None:
