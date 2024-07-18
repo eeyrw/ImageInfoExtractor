@@ -7,7 +7,7 @@ import numpy as np
 class Predictor():
     def __init__(self, weightsDir='.') -> None:
 
-        device = 'cpu'  # cpu, cuda, mps
+        device = 'cuda:6'  # cpu, cuda, mps
         backend = 'onnxruntime'  # opencv, onnxruntime, openvino
 
         openpose_skeleton = False  # True for openpose-style, False for mmpose-style
@@ -30,10 +30,10 @@ class Predictor():
                 for kpt,score in zip(instance_kpts,instance_scores)
             ]
             keypoints_mapped.append({'BBOX':(
-                round(float(instance_bbox[0])/width, ndigits=3), #x
-                round(float(instance_bbox[1])/height, ndigits=3), #y
-                round(float(instance_bbox[2])/width, ndigits=3), #w
-                round(float(instance_bbox[3])/height, ndigits=3), #h
+                round(float(instance_bbox[0])/width, ndigits=3), #x1
+                round(float(instance_bbox[1])/height, ndigits=3), #y1
+                round(float(instance_bbox[2])/width, ndigits=3), #x2
+                round(float(instance_bbox[3])/height, ndigits=3), #y2
             ),'KPTS':instance_kpts_mapped})
         return {'POSE_KPTS':keypoints_mapped}
 
