@@ -368,9 +368,9 @@ class ImageSRTool:
 
 
 class ImagePoseEstimateTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir, device='cuda') -> None:
         self.imagePoseEstPredictor = RTMPoseInference.inference.Predictor(
-            weightsDir='./DLToolWeights')
+            weightsDir='./DLToolWeights',device=device)
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -393,7 +393,13 @@ class ImagePoseEstimateTool:
         # poseResult.save(bakImagePath)
         imageInfo.update(preds)
         return imageInfo
-
+    
+    def getUpdateDict(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        preds = self.imagePoseEstPredictor.predict(img)
+        return preds
+    
     @staticmethod
     def fieldSet():
         return set(['POSE_KPTS'])
