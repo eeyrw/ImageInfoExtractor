@@ -206,34 +206,39 @@ class SmartCropTool:
 
 
 class ImageOCRTool:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir, device='cuda',debugOutput=False) -> None:
         self.imageOCRPredictor = OCRInference.inference.Predictor(
-            weightsDir="./DLToolWeights/EasyOCR")
+            weightsDir="./DLToolWeights/EasyOCR",device=device)
+        self.debugOutput = debugOutput
 
     def update(self, imageInfo, topDir):
         img = OCRInference.inference.pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
-        resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
-        poseResult = img.resize(
-            tuple(math.ceil(x * resize_ratio) for x in img.size),
-            Image.BICUBIC
-        )
+        if width*height>1024*1024:
+            resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
+            resizedImg = img.resize(
+                tuple(math.ceil(x * resize_ratio) for x in img.size),
+                Image.BICUBIC
+            )
+        else:
+            resizedImg = img
 
         width, height = img.size
-        bounds = self.imageOCRPredictor.predict(poseResult)
+        bounds = self.imageOCRPredictor.predict(resizedImg)
 
-        bakDir = os.path.join(topDir, 'ocr_result',
-                              os.path.dirname(imageInfo['IMG']))
-        bakImagePath = os.path.join(
-            bakDir, os.path.basename(imageInfo['IMG']))
-        if not os.path.exists(bakDir):
-            os.makedirs(bakDir)
-        if len(bounds) > 0:
-            self.draw_boxes(poseResult, bounds)
-            poseResult.save(bakImagePath)
+        if self.debugOutput:
+            bakDir = os.path.join(topDir, 'ocr_result',
+                                os.path.dirname(imageInfo['IMG']))
+            bakImagePath = os.path.join(
+                bakDir, os.path.basename(imageInfo['IMG']))
+            if not os.path.exists(bakDir):
+                os.makedirs(bakDir)
+            if len(bounds) > 0:
+                self.draw_boxes(resizedImg, bounds)
+                resizedImg.save(bakImagePath)
 
-        imageInfo.update({'W': width, 'H': height})
+        imageInfo.update({'W': width, 'H': height, 'TXT':bounds})
         return imageInfo
 
     def draw_boxes(self, image, bounds, color='yellow', width=6):
@@ -242,10 +247,14 @@ class ImageOCRTool:
             p0, p1, p2, p3 = bound[0]
             draw.line([*p0, *p1, *p2, *p3, *p0], fill=color, width=width)
         return image
-
+    
+    @staticmethod
+    def supportBatchInference():
+        return False
+    
     @staticmethod
     def fieldSet():
-        return set(['H', 'W'])
+        return set(['TXT','H', 'W'])
 
 
 class JpegQuailityTool:
@@ -576,7 +585,7 @@ class ImageInfoManager:
         self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
         self.saveInterval = saveInterval
         if os.path.isfile(self.imageInfoFilePath):
-            with open(self.imageInfoFilePath, 'r') as f:
+            with open(self.imageInfoFilePath, 'r', encoding='utf8') as f:
                 self.imageInfoList = json.load(f)
         else:
             print('ImageInfo File Not Found. Create one.')
@@ -601,8 +610,17 @@ class ImageInfoManager:
             self.processTools = processTools
 
     def saveImageInfoList(self):
-        with open(self.imageInfoFilePath, 'w') as f:
-            json.dump(self.imageInfoList, f)
+        class NpEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return super(NpEncoder, self).default(obj)
+        with open(self.imageInfoFilePath, 'w',encoding='utf8') as f:
+            json.dump(self.imageInfoList, f,cls=NpEncoder)
 
     def getImageList(self, filteredDirList=[], relPath=False):
         print('Detect image files...')

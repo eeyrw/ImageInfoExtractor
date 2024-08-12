@@ -1,5 +1,5 @@
 import cv2
-from rtmlib import Wholebody, draw_skeleton
+from rtmlib import Body, Wholebody, draw_skeleton
 from PIL import Image
 import os
 import numpy as np
@@ -10,7 +10,13 @@ class Predictor():
     def __init__(self, weightsDir='.', device='cpu') -> None:
         backend = 'onnxruntime'  # opencv, onnxruntime, openvino
         openpose_skeleton = False  # True for openpose-style, False for mmpose-style
-        self.model = Wholebody(
+        # self.model = Wholebody(
+        #     to_openpose=openpose_skeleton,
+        #     # pose=os.path.join(weightsDir, 'dw-ll_ucoco_384.onnx'),
+        #     mode='performance',  # 'performance', 'lightweight', 'balanced'. Default: 'balanced'
+        #     backend=backend,
+        #     device=device)
+        self.model = Body(
             to_openpose=openpose_skeleton,
             # pose=os.path.join(weightsDir, 'dw-ll_ucoco_384.onnx'),
             mode='performance',  # 'performance', 'lightweight', 'balanced'. Default: 'balanced'

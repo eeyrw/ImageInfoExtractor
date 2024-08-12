@@ -12,7 +12,8 @@ import os
 
 class Predictor():
     def __init__(self, weightsDir='.') -> None:
-        self.cfg = CN._load_cfg_py_source('ViTPoseInference/configs/base_config.py')
+        self.cfg = CN._load_cfg_py_source('ViTPoseInference/configs/custom_config.py')
+        self.cfg.cpu = True
         if self.cfg.cpu:
             EP_list = ['CPUExecutionProvider']
         else:
@@ -52,3 +53,4 @@ def pil_loader(path):
     with open(path, 'rb') as f:
         img = Image.open(f)
         return img.convert('RGB')
+
