@@ -16,13 +16,15 @@ class Predictor():
         open_cv_image = open_cv_image[:, :, ::-1].copy() 
         results = self.reader.readtext(open_cv_image)
         resultsWithoutNumpy = []
+        wh = np.asarray([width, height])
         for (p1,p2,p3,p4),text,score in results:
-            p1 = np.round(p1,decimals=4).tolist()
-            p2 = np.round(p2,decimals=4).tolist()
-            p3 = np.round(p3,decimals=4).tolist()
-            p4 = np.round(p4,decimals=4).tolist()
-            score = np.round(score,decimals=3).item()
-            resultsWithoutNumpy.append(((p1,p2,p3,p4),text,score))
+            if score>0.2:
+                p1 = np.round(p1/wh,decimals=4).tolist()
+                p2 = np.round(p2/wh,decimals=4).tolist()
+                p3 = np.round(p3/wh,decimals=4).tolist()
+                p4 = np.round(p4/wh,decimals=4).tolist()
+                score = np.round(score,decimals=3).item()
+                resultsWithoutNumpy.append(((p1,p2,p3,p4),text,score))
             
         return resultsWithoutNumpy
 
