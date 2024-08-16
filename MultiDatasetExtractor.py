@@ -87,9 +87,10 @@ class MultiDatasetExtractor:
 
     def genSelectedImageInfoJson(self,outputName='ImageInfoSelected.json',filterDirList=[]):
         imgDsCreator = ImageDsCreator(self.topDir)
-        def criteria(singleImageInfo): return singleImageInfo['Q512'] > 40 and singleImageInfo['H'] * \
-            singleImageInfo['W'] >= 768 * \
-            768
+        def criteria(singleImageInfo): return singleImageInfo['Q512'] > 50 and \
+            singleImageInfo['A_EAT'] > 5.5 and singleImageInfo['H'] * \
+            singleImageInfo['W'] >= 896 * \
+            896
         for path in self.dirsHasImageInfoJson:
             if not self.isInFilterDir(os.path.dirname(path),filterDirList):
                 imgDsCreator.addImageSet(path, criteria, 5000000)
