@@ -7,6 +7,7 @@ from shutil import copyfile
 import os
 from math import sqrt
 import joblib
+from matplotlib import pyplot as plt
 from tqdm import tqdm
 import webdataset as wds
 from PIL import Image
@@ -15,7 +16,7 @@ import cv2
 import tarfile
 from MultiDatasetExtractor import MultiDatasetExtractor
 import polars as pl
-
+import numpy as np
 
 class ImageDsCreator:
 
@@ -106,24 +107,61 @@ class ImageDsCreator:
         freqWithPoseDF = freqDF.filter(pl.col('LBL') != -1)
         freqWithoutPoseDF = freqDF.filter(pl.col('LBL') == -1)
 
+
         imageWithPoseNum = freqWithPoseDF.select(pl.sum('freq'))[0, 0]
         imageWithOutPoseNum = freqWithoutPoseDF.select(pl.sum('freq'))[0, 0]
-        minFreq = freqWithPoseDF.select(pl.min('freq'))[0, 0]
 
-        normalizeFreqWithPoseDF = freqWithPoseDF.select(pl.col('LBL'),
-                                                        ((1/pl.col('freq'))/(1/minFreq)*(imageWithPoseNum/(imageWithPoseNum+imageWithOutPoseNum))).alias('WEIGHT'))
-        normalizeFreqWithoutPoseDF = freqWithoutPoseDF.select(pl.col('LBL'),
-                                                              (pl.col('freq')/(imageWithPoseNum+imageWithOutPoseNum)).alias('WEIGHT'))
+        maxFreq = freqWithPoseDF.select(pl.max('freq'))[0, 0]
 
-        normalizeFreDF = pl.concat(
+        freqWithPoseValidDF = freqWithPoseDF.filter(pl.col('freq') >=maxFreq/10)
+        freqWithPoseNoiseDF = freqWithPoseDF.filter(pl.col('freq') <maxFreq/10)
+
+        minFreq = freqWithPoseValidDF.select(pl.min('freq'))[0, 0]
+
+
+        freqWithPoseInvalidDF = pl.concat(
             [
-                normalizeFreqWithPoseDF,
-                normalizeFreqWithoutPoseDF,
+                freqWithoutPoseDF,
+                freqWithPoseNoiseDF,
             ],
             how="vertical",
         )
+
+        normalizeFreqWithPoseDF = freqWithPoseValidDF.select(pl.col('LBL'),
+                                                        ((1/pl.col('freq'))/(1/minFreq)*(pl.sum('freq')/(imageWithPoseNum+imageWithOutPoseNum))).alias('WEIGHT')).with_columns(LBL_NEW=pl.col('LBL'))
+        freqWithPoseInvalidDF = freqWithPoseInvalidDF.select(pl.col('LBL'),
+                                                              (pl.sum('freq')/(imageWithPoseNum+imageWithOutPoseNum)).alias('WEIGHT')).with_columns(LBL_NEW=pl.lit(-1))
+        normalizeFreDF = pl.concat(
+            [
+                normalizeFreqWithPoseDF,
+                freqWithPoseInvalidDF,
+            ],
+            how="vertical",
+        )
+
+        
+
+
+        
         fianlDF = filterImagesWithLabelsDF.join(
             normalizeFreDF, on="LBL", how="left", coalesce=True)
+        
+        
+        lblArray = fianlDF['LBL_NEW'].to_numpy()
+        weightArray = fianlDF['WEIGHT'].to_numpy()
+        weightArray = weightArray/sum(weightArray)
+        poseLblBins = normalizeFreqWithPoseDF['LBL_NEW'].to_numpy(allow_copy=True)
+        poseLblBins = np.sort(poseLblBins)
+
+        sampleResult = np.random.choice(lblArray,100000,p=weightArray)
+        fig = plt.figure(figsize=(24, 8))
+        ax = fig.add_subplot(1,1,1)
+        ax.set_title('PDF')
+        ns, edgeBin, patches = ax.hist(sampleResult, bins=poseLblBins, rwidth=0.8,label='LBL')
+        ax.legend(prop={'size': 10})
+        plt.grid(True)
+        plt.savefig('sample.jpg')
+
         fianlDF.write_json(os.path.join(self.outputDir,'ImageInfoWeighted.json'))
 
     def generateWdsDataset(self):
