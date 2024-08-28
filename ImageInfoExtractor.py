@@ -31,6 +31,7 @@ from pathlib import Path, PurePath
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 import time
+import shutil
 from torch.multiprocessing import Pool, Process, set_start_method
 try:
      set_start_method('spawn')
@@ -81,14 +82,17 @@ class ImageSizeInfoCorrectTool:
         with open(os.path.join(topDir, imageInfo['IMG']), 'rb') as f:
             img = Image.open(f)
         width, height = img.size
+        ret = None
         if 'W' in imageInfo.keys() and 'H' in imageInfo.keys():
             if width != imageInfo['W'] or height != imageInfo['H']:
                 print('Correct size: %s' % imageInfo['IMG'])
                 imageInfo.update({'W': width, 'H': height})
+                ret = imageInfo
         else:
             print('Create size: %s' % imageInfo['IMG'])
             imageInfo.update({'W': width, 'H': height})
-        return imageInfo
+            ret = imageInfo
+        return ret
 
     @staticmethod
     def fieldSet():
@@ -333,9 +337,13 @@ class ImageEATAestheticTool:
 
 
 class ImageSRTool:
-    def __init__(self, topDir) -> None:
-        self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
-            weightsDir='./DLToolWeights/RealESRGAN')
+    def __init__(self, topDir, device='cuda',srType='Photo') -> None:
+        if srType=='Photo':
+            self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
+                weightsDir='./DLToolWeights/RealESRGAN',device=device)
+        elif srType == 'Anime':
+            self.imageSRPredictor = RealCUGANInference.inference_cugan.Predictor(
+                weightsDir='./DLToolWeights',device=device)          
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
@@ -373,7 +381,7 @@ class ImageSRTool:
     @staticmethod
     def updateCriteria(imageInfo):
         imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea < 1024*1024 and imageArea > 384*384 and imageInfo['Q512'] > 60
+        return imageArea < 896*896 and imageArea > 384*384 and imageInfo['Q512'] > 60
 
 
 class ImagePoseEstimateTool:
@@ -576,9 +584,11 @@ class ImageCaptionTool:
 
 class ImageInfoManager:
     def __init__(self, topDir, imageInfoFileName='ImageInfo.json', 
-                 processTools=[], toolConfigYAML=None,
+                 processTools=[], toolConfigYAML=None,topTopDir=None,debugWithoutSave=False,
                  saveInterval=3600) -> None:
         self.topDir = topDir
+        self.topTopDir = topTopDir
+        self.debugWithoutSave =  debugWithoutSave
         self.processTools = processTools
         self.toolConfigYAML = toolConfigYAML
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
@@ -592,6 +602,23 @@ class ImageInfoManager:
             self.imageInfoList = []
         self.createProcessTools()
 
+    def isInFilterDir(self,dir,filteredDirList):
+        if self.topTopDir:
+            topDir = self.topTopDir
+        else:
+            topDir = self.topDir
+        filteredDirList = [pathlib.Path(dirPath)
+                           for dirPath in filteredDirList]
+        dirRelativepath = pathlib.Path(
+            os.path.relpath(dir, topDir))
+
+        detectedFilterDir = False
+        for filterd in filteredDirList:
+            if filterd in dirRelativepath.parents:
+                detectedFilterDir = True
+                break
+        return detectedFilterDir
+    
     def createProcessTools(self):
         if self.toolConfigYAML:
             print('Use tool config YAML,param processTools has been ignored.')
@@ -601,7 +628,7 @@ class ImageInfoManager:
 
             processTools = []
             for toolDict in toolsConfig:
-                toolDictUpdate = {'forceUpdate': False,'multiGPUs':None,
+                toolDictUpdate = {'forceUpdate': False,'multiGPUs':None,'excludeDirs':None,'includeDirs':None,
                                   'args': {}, 'batchsize': 1, 'num_workers': 4}
                 toolDictUpdate.update(toolDict)
                 toolDictUpdate['toolClass'] = getattr(
@@ -610,6 +637,9 @@ class ImageInfoManager:
             self.processTools = processTools
 
     def saveImageInfoList(self):
+        if self.debugWithoutSave:
+            print('!!!DEBUG MODE. NOT SAVED!!!')
+            return
         class NpEncoder(json.JSONEncoder):
             def default(self, obj):
                 if isinstance(obj, np.integer):
@@ -619,8 +649,11 @@ class ImageInfoManager:
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return super(NpEncoder, self).default(obj)
-        with open(self.imageInfoFilePath, 'w',encoding='utf8') as f:
+        tempFilePath = self.imageInfoFilePath+'.lock'
+        with open(tempFilePath, 'w',encoding='utf8') as f:
             json.dump(self.imageInfoList, f,cls=NpEncoder)
+        shutil.move(tempFilePath,self.imageInfoFilePath)
+        
 
     def getImageList(self, filteredDirList=[], relPath=False):
         print('Detect image files...')
@@ -685,10 +718,19 @@ class ImageInfoManager:
                 'batchsize': processTool['batchsize'],
                 'num_workers': processTool['num_workers'],
                 'multiGPUs': processTool['multiGPUs'],
+                'excludeDirs':processTool['excludeDirs'],
+                'includeDirs':processTool['includeDirs'],
                 'itemIdx': []}
 
-        
         for processTool, processDict in processToolNameListDict.items():
+            toolUpdateCount = 0
+            if (processDict['includeDirs'] and \
+                    not self.isInFilterDir(self.topDir,processDict['includeDirs'])) \
+                or \
+                (processDict['excludeDirs'] and self.isInFilterDir(self.topDir,processDict['excludeDirs'])):
+                print('Skip %s' % processTool.__name__)
+                continue
+
             for idx, imageInfo in enumerate(self.imageInfoList):
                 meetUpdateCriteria = True
                 if hasattr(processTool, 'updateCriteria'):
@@ -728,8 +770,10 @@ class ImageInfoManager:
                         lastTs = time.time()
                         for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                             try:
-                                toolInstance.update(
+                                updateResult = toolInstance.update(
                                     self.imageInfoList[imageInfoIdx], self.topDir)
+                                if updateResult is not None:
+                                    toolUpdateCount = toolUpdateCount+1
                             except Exception as e:
                                 raise e
                                 print('ERROR:%s:%s' %
@@ -737,7 +781,8 @@ class ImageInfoManager:
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
-                                self.saveImageInfoList()
+                                if toolUpdateCount>0:
+                                    self.saveImageInfoList()
                 else:
                     lastTs = time.time()
                     tasks = processDict['itemIdx']
@@ -765,8 +810,11 @@ class ImageInfoManager:
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
-                                self.saveImageInfoList()            
-                self.saveImageInfoList()
+                                self.saveImageInfoList() 
+                if toolUpdateCount==0:
+                    print(f'No update in {self.topDir} by tool {processTool.__name__}.')
+                else:         
+                    self.saveImageInfoList()
             else:
                 print('No update by %s' % processTool.__name__)
                 continue

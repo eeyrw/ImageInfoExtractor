@@ -5,8 +5,9 @@ from ImageInfoExtractor import ImageInfoManager
 from ImageSelect import ImageDsCreator
 
 class MultiDatasetExtractor:
-    def __init__(self, topDir) -> None:
+    def __init__(self, topDir,debugWithoutSave=False) -> None:
         self.topDir = topDir
+        self.debugWithoutSave = debugWithoutSave
         self.dirsHasImageInfoJson = []
         self.dirsHasNotImageInfoJson = []
 
@@ -54,21 +55,21 @@ class MultiDatasetExtractor:
             print('====Processing %s' % path)
             dsDir = os.path.dirname(path)
             imageInfoManager = ImageInfoManager(
-                dsDir, toolConfigYAML=toolConfig)
+                dsDir, toolConfigYAML=toolConfig,topTopDir=self.topDir,debugWithoutSave=self.debugWithoutSave)
             imageInfoManager.updateImages(
                 filteredDirList=['raw_before_sr', 'ocr_result'])
             imageInfoManager.infoUpdate()
-            imageInfoManager.saveImageInfoList()
+            #imageInfoManager.saveImageInfoList()
 
         for path in self.dirsHasNotImageInfoJson:
             print('====Processing %s' % path)
             dsDir = path
             imageInfoManager = ImageInfoManager(
-                dsDir, toolConfigYAML=toolConfig)
+                dsDir, toolConfigYAML=toolConfig,topTopDir=self.topDir,debugWithoutSave=self.debugWithoutSave)
             imageInfoManager.updateImages(
                 filteredDirList=['raw_before_sr', 'ocr_result'])
             imageInfoManager.infoUpdate()
-            imageInfoManager.saveImageInfoList()
+            #imageInfoManager.saveImageInfoList()
 
     def isInFilterDir(self,dir,filteredDirList):
 
