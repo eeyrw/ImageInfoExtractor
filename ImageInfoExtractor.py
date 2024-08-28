@@ -762,6 +762,7 @@ class ImageInfoManager:
                                     self.imageInfoList[imageInfoIdx].update(
                                         updateDict)
                                 pbar.update(len(indices))
+                                toolUpdateCount = toolUpdateCount+len(indices)
                                 nowTs = time.time()
                                 if nowTs-lastTs >= self.saveInterval:
                                     lastTs = nowTs
@@ -807,6 +808,7 @@ class ImageInfoManager:
                         for updateDictIdxList in tqdm(p.imap(self.processFunc, subLists), total=len(subLists)):
                             for imageInfoIdx, updateDict in updateDictIdxList:
                                 self.imageInfoList[imageInfoIdx].update(updateDict)
+                            toolUpdateCount = toolUpdateCount+len(updateDictIdxList)
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
