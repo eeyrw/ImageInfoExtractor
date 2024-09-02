@@ -6,15 +6,16 @@ from .upcunet_v3 import RealWaifuUpScaler
 
 
 class Predictor():
-    def __init__(self, weightsDir='.', modeName='up4x-latest-conservative') -> None:
+    def __init__(self, weightsDir='.', device='cuda',modeName='up4x-latest-conservative') -> None:
         self.model_name = modeName
+        self.device = device
 
         # determine model paths
         model_path = os.path.join(
             weightsDir, 'CUGAN', self.model_name + '.pth')
 
         # load+device初始化好当前卡的模型
-        self.model = RealWaifuUpScaler(4, model_path, True, 'cuda')
+        self.model = RealWaifuUpScaler(4, model_path, True, self.device)
 
     def predict(self, img):
         try:

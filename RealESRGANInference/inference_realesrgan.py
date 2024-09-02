@@ -6,10 +6,11 @@ from basicsr.utils.download_util import load_file_from_url
 from PIL import Image
 from realesrgan import RealESRGANer
 import numpy
+import torch
 
 
 class Predictor():
-    def __init__(self, weightsDir='.', modeName='RealESRGAN_x2plus') -> None:
+    def __init__(self, weightsDir='.', modeName='RealESRGAN_x2plus',device='cuda') -> None:
         """Inference demo for Real-ESRGAN.
         """
         # help=('Model names: RealESRGAN_x4plus | RealESRNet_x4plus | RealESRGAN_x4plus_anime_6B | RealESRGAN_x2plus | '
@@ -52,6 +53,13 @@ class Predictor():
                 model_path = load_file_from_url(
                     url=url, model_dir=weightsDir, progress=True, file_name=None)
 
+        torchDevice = torch.device(device)
+        if torchDevice.index:
+            gpu_id = torchDevice.index
+        elif torchDevice.type=='cpu':
+            gpu_id = None
+        elif torchDevice.type=='cuda':
+            gpu_id = 0
         # restorer
         self.upsampler = RealESRGANer(
             scale=netscale,
@@ -62,7 +70,7 @@ class Predictor():
             tile_pad=10,
             pre_pad=0,
             half=True,
-            gpu_id=0)
+            gpu_id=gpu_id)
 
     def predict(self, img):
         try:

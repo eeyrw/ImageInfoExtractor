@@ -113,15 +113,15 @@ class Predictor():
             from timm.data import create_transform, resolve_data_config
             from torchvision.transforms import Lambda
             self.model: nn.Module = timm.create_model(
-                'hf-hub:SmilingWolf/wd-vit-tagger-v3').eval()
+                'hf-hub:SmilingWolf/wd-vit-large-tagger-v3').eval()
             state_dict = timm.models.load_state_dict_from_hf(
-                'SmilingWolf/wd-vit-tagger-v3')
+                'SmilingWolf/wd-vit-large-tagger-v3')
             self.model.load_state_dict(state_dict)
             self.model.to(self.device)
 
             print("Loading tag list...")
             self.labels: LabelData = self.load_labels_hf(
-                repo_id='SmilingWolf/wd-vit-tagger-v3')
+                repo_id='SmilingWolf/wd-vit-large-tagger-v3')
 
         print("Creating data transform...")
         self.model.pretrained_cfg['crop_mode'] = 'border'
@@ -245,7 +245,7 @@ class Predictor():
 
 
 if __name__ == "__main__":
-    pr = Predictor(weightsDir='DLToolWeights')
-    with open('a.jpg', 'rb') as f:
+    pr = Predictor(weightsDir='DLToolWeights',device='cuda:6')
+    with open('alp.png', 'rb') as f:
         imgs = Image.open(f).convert('RGB')
-        pr.predict(imgs)
+        print(pr.predict(imgs))
