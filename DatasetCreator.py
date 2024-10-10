@@ -30,7 +30,7 @@ class ImageDsCreator:
         self.imageInfoListList = []
         self.imageSetList = []
 
-    def isInFilterDir(self, dir, filteredDirList):
+    def isInOrIsFilterDir(self, dir, filteredDirList):
 
         filteredDirList = [
             pathlib.Path(dirPath) for dirPath in filteredDirList
@@ -39,14 +39,14 @@ class ImageDsCreator:
 
         detectedFilterDir = False
         for filterd in filteredDirList:
-            if filterd in dirRelativepath.parents:
+            if filterd in dirRelativepath.parents or filterd==dirRelativepath:
                 detectedFilterDir = True
                 break
         return detectedFilterDir
 
     def generateCandidateList(self, criteria, wantNum, filterDirList=[]):
         for path in self.multiDsExtractor.dirsHasImageInfoJson:
-            if not self.isInFilterDir(os.path.dirname(path), filterDirList):
+            if not self.isInOrIsFilterDir(os.path.dirname(path), filterDirList):
                 self.addImageSet(path, criteria, wantNum)
             else:
                 print(f'Skip {path}')
