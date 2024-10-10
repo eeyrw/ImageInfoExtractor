@@ -3,8 +3,9 @@ import os
 from tqdm import tqdm
 import tarfile
 from MultiDatasetExtractor import MultiDatasetExtractor
+import zipfile
 
-class UpdateTarCreator:
+class UpdatePatchCreator:
 
     def __init__(self, topDir, outputDir) -> None:
         self.topDir = topDir
@@ -16,16 +17,8 @@ class UpdateTarCreator:
 
     def detectImagesFolderStructure(self, path, acceptExts=['.jpg','.png','.webp','.heic']):
         imageFileList = []
-
-        for entry in os.scandir(path):
-            file_path = entry.path
-            if entry.is_file(follow_symlinks=False) and pathlib.Path(file_path).suffix.lower() in acceptExts:
-                dirRelativepath = pathlib.Path(os.path.relpath(file_path, path))
-                imageFileList.append(dirRelativepath)
-            elif entry.is_dir(follow_symlinks=False):
-                imageFileListNextLevel = self.detectImagesFolderStructure(
-                    file_path)
-                imageFileList.extend(imageFileListNextLevel)
+        for ext in acceptExts:
+            imageFileList.extend([absPath.relative_to(path) for absPath in pathlib.Path(path).glob('**/*'+ext,case_sensitive=False)])
         return imageFileList
 
 
@@ -42,23 +35,35 @@ class UpdateTarCreator:
 
 
 
-    def generateTar(self, tarName='UpdateTar', imageInfoFileOnly=False):
-        tar = tarfile.open(os.path.join(self.outputDir, tarName + ".tar.gz"),
-                           "w:gz")
-        for dsDir in self.multiDsExtractor.dirsHasImageInfoJson:
-            dsDir = pathlib.Path(dsDir).parents[0]
-            originalImageFileList,backUpImageFileList = self.detectedNeedUpdatesImageFiles(dsDir)
-            updateImageFileList= originalImageFileList+backUpImageFileList
-            for updateImageFile in tqdm(updateImageFileList):
-                updateImageFileAbsPath = dsDir/updateImageFile
-                info = tarfile.TarFile.gettarinfo(tar,updateImageFileAbsPath,arcname=str(dsDir.stem/updateImageFile))
-                with open(updateImageFileAbsPath,'rb') as f:
-                    tar.addfile(info, fileobj=f)
-        tar.close()
+    def generateZip(self, tarName='UpdatePatch', imageInfoFileOnly=False):
+        # tar = tarfile.open(os.path.join(self.outputDir, tarName + ".tar.gz"),
+        #                    "w:gz")
+        with zipfile.ZipFile(os.path.join(self.outputDir, tarName + '.zip'),'w') as myzip:
+            for dsDir in self.multiDsExtractor.dirsHasImageInfoJson:
+                dsImageInfoPath =  pathlib.Path(dsDir)
+                dsDir = dsImageInfoPath.parents[0]
+                originalImageFileList,backUpImageFileList = self.detectedNeedUpdatesImageFiles(dsDir)
+                updateImageFileList= originalImageFileList+backUpImageFileList
+                for updateImageFile in tqdm(updateImageFileList):
+                    updateImageFileAbsPath = dsDir/updateImageFile
+                    arcnamePath = updateImageFileAbsPath.relative_to(self.topDir)
+                    # info = tarfile.TarFile.gettarinfo(tar,updateImageFileAbsPath,arcname=str(arcnamePath))
+                    # with open(updateImageFileAbsPath,'rb') as f:
+                    #     tar.addfile(info, fileobj=f)
+                    try:
+                        myzip.write(updateImageFileAbsPath,arcname=arcnamePath,compress_type=zipfile.ZIP_DEFLATED)
+                    except FileNotFoundError:
+                        print('Missing file:',updateImageFileAbsPath)
+
+                # backup ImageInfo files
+                #info = tarfile.TarFile.gettarinfo(tar,dsImageInfoPath,arcname=str(dsImageInfoPath.relative_to(self.topDir)))
+                with open(dsImageInfoPath,'rb') as f:
+                    myzip.write(dsImageInfoPath,arcname=str(dsImageInfoPath.relative_to(self.topDir)),compress_type=zipfile.ZIP_DEFLATED)
+        #tar.close()
 
 
 
 if __name__ == '__main__':
-    dsc = UpdateTarCreator('xxx',
+    dsc = UpdatePatchCreator('xxx',
                          '.')
-    dsc.generateTar()
+    dsc.generateZip()
