@@ -164,45 +164,6 @@ class ImageDsCreator:
 
         fianlDF.write_json(os.path.join(self.outputDir,'ImageInfoWeighted.json'))
 
-    def generateWdsDataset(self):
-        sink = wds.ShardWriter(os.path.join(self.outputDir,
-                                            "FinalDsWds-%05d.tar"),
-                               maxsize=100 * 1024 * 1024)
-        for imageRoot, imageInfoList in self.imageInfoListList:
-            print('Writing images from: %s' % imageRoot)
-            for imageInfo in tqdm(imageInfoList):
-
-                imageBytes, imgRelPath = self.processImage(
-                    imageRoot, imageInfo)
-                sample = {
-                    "__key__": os.path.splitext(imgRelPath)[0],
-                    os.path.splitext(imgRelPath)[1][1:]: imageBytes,
-                    "json": json.dumps(imageInfo).encode()
-                }
-                sink.write(sample)
-        sink.close()
-
-    def generateTar(self, tarName='FinalDsWds', imageInfoFileOnly=False):
-        tar = tarfile.open(os.path.join(self.outputDir, tarName + ".tar"),
-                           "w:")
-        for imageRoot, imageInfoList in self.imageInfoListList:
-            print('Writing images from: %s' % imageRoot)
-            for imageInfo in tqdm(imageInfoList):
-                if not imageInfoFileOnly:
-                    imageBytes, imgRelPath = self.processImage(
-                        imageRoot, imageInfo, passthrough=True)
-                    info = tarfile.TarInfo(name=tarName + '/' + imgRelPath)
-                    info.size = len(imageBytes)
-                    tar.addfile(info, fileobj=io.BytesIO(imageBytes))
-                self.imageInfoList.append(imageInfo)
-
-        imageInfoJsonBytes = json.dumps(self.imageInfoList).encode('utf8')
-        info = tarfile.TarInfo(name=tarName + '/ImageInfo.json')
-        info.size = len(imageInfoJsonBytes)
-        tar.addfile(info, fileobj=io.BytesIO(imageInfoJsonBytes))
-        tar.close()
-        with open(self.imageInfoFilePath, 'w') as f:
-            json.dump(self.imageInfoList, f)
 
     def generate(self, flattenDir=False):
         for imageRoot, imageInfoList in self.imageInfoListList:
