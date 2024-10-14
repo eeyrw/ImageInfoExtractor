@@ -125,6 +125,80 @@ class PoseAnalyser:
         print(f'Num has basic kpt:{numHasBasicKpt}, Num has not basic kpt:{numHasNotBasicKpt}')
 
 
+    def genHandsEmbedding(self):
+        self.handsPatchDict = {}
+        leftHandsIdcs = range(91,111+1) #91-111
+        rightHandsIdcs = range(112,132+1) #112-132
+
+        for path in self.multiDsExtractor.dirsHasImageInfoJson:
+            print('====Processing %s' % path)
+            dsDir = os.path.dirname(path)
+            relDsDir = str(pathlib.Path(
+                os.path.relpath(dsDir, self.topDir)).as_posix())
+            with open(path, 'r') as f:
+                self.imageInfoList = json.load(f)
+            for imageInfo in self.imageInfoList:
+                handsPatchList = []
+                if 'POSE_KPTS' in imageInfo.keys() and len(imageInfo['POSE_KPTS']) > 0:
+                    bboxAreaList=[]
+                    for poseDict in imageInfo['POSE_KPTS']:
+                        x1, y1, x2, y2 = poseDict['BBOX']
+                        area = (x2-x1)*(y2-y1)
+                        bboxAreaList.append(area)
+                    areaOrdinalIdcs = np.argsort(bboxAreaList)
+                    maxBBOXIdx = areaOrdinalIdcs[-1]
+
+                    validLeftHandsIdcs =[]
+                    for idx in leftHandsIdcs:
+                        if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
+                            validLeftHandsIdcs.append(idx)
+                    if len(validLeftHandsIdcs)>len(leftHandsIdcs)-10:
+                        x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
+                        y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
+                        x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
+                        y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
+                        area = (x2-x1)*(y2-y1)
+                        if area>1e-8:
+                            extendX = (x2-x1)*0.1
+                            extendY = (y2-y1)*0.1
+                            handsPatchList.append((x1-extendX,y1-extendY,x2+extendX,y2+extendY))
+                    
+                    validRHandsIdcs =[]
+                    for idx in rightHandsIdcs:
+                        if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
+                            validRHandsIdcs.append(idx)
+                    if len(validRHandsIdcs)>len(rightHandsIdcs)-10:
+                        x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
+                        y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
+                        x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
+                        y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
+                        area = (x2-x1)*(y2-y1)
+                        if area>1e-8:
+                            extendX = (x2-x1)*0.1
+                            extendY = (y2-y1)*0.1
+                            handsPatchList.append((x1-extendX,y1-extendY,x2+extendX,y2+extendY))
+
+                    self.handsPatchDict[os.path.join(relDsDir,imageInfo['IMG'])
+                                    ] = handsPatchList
+
+        col = 16
+        row = 16
+        handsCount = 1
+        preparedImages = []
+        for imgPath,handsPatchList in self.handsPatchDict.items():
+            img = Image.open(os.path.join(self.topDir, imgPath))
+            w,h = img.size
+            for hand in handsPatchList:
+                handImage = img.crop((hand[0]*w,hand[1]*h,hand[2]*w,hand[3]*h))
+                handImage = PIL.ImageOps.pad(handImage,(64,64))
+                preparedImages.append(handImage)
+                handsCount = handsCount+1
+                if len(preparedImages)==col*row:
+                    self.genImageJiasaw(preparedImages,64,64,col,row,os.path.join('HandsResultSample',f'{handsCount}.webp'))
+                    preparedImages = []
+
+
+
     def cluster(self,clusterMethod = 'kmeans',clusterNum=500):
         print('Start clustering...')
         self.poseImagesList = list(self.embeddingDict.keys())
