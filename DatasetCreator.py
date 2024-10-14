@@ -8,6 +8,7 @@ import os
 from math import sqrt
 import joblib
 from matplotlib import pyplot as plt
+import torch
 from tqdm import tqdm
 import webdataset as wds
 from PIL import Image
@@ -20,7 +21,7 @@ import numpy as np
 
 class ImageDsCreator:
 
-    def __init__(self, topDir, outputDir) -> None:
+    def __init__(self, topDir, outputDir, filteredDirList) -> None:
         self.topDir = topDir
         self.multiDsExtractor = MultiDatasetExtractor(topDir)
         self.multiDsExtractor.scanDir(printScanResult=True)
@@ -29,13 +30,19 @@ class ImageDsCreator:
             os.makedirs(self.outputDir)
         self.imageInfoListList = []
         self.imageSetList = []
+        self.filteredDirList = filteredDirList
 
     def isInOrIsFilterDir(self, dir, filteredDirList):
 
         filteredDirList = [
             pathlib.Path(dirPath) for dirPath in filteredDirList
         ]
-        dirRelativepath = pathlib.Path(os.path.relpath(dir, self.topDir))
+        
+        dir = pathlib.Path(dir)
+        if dir.is_absolute():
+            dirRelativepath = dir.relative_to(self.topDir)
+        else:
+            dirRelativepath = dir
 
         detectedFilterDir = False
         for filterd in filteredDirList:
@@ -44,9 +51,9 @@ class ImageDsCreator:
                 break
         return detectedFilterDir
 
-    def generateCandidateList(self, criteria, wantNum, filterDirList=[]):
+    def generateCandidateList(self, criteria, wantNum):
         for path in self.multiDsExtractor.dirsHasImageInfoJson:
-            if not self.isInOrIsFilterDir(os.path.dirname(path), filterDirList):
+            if not self.isInOrIsFilterDir(os.path.dirname(path), self.filteredDirList):
                 self.addImageSet(path, criteria, wantNum)
             else:
                 print(f'Skip {path}')
@@ -56,9 +63,13 @@ class ImageDsCreator:
         for jsonPath, criteria, wantedNum in self.imageSetList:
             with open(jsonPath, 'r') as f:
                 imageInfo = json.load(f)
+
+            relDsDir = pathlib.Path(jsonPath).parent.relative_to(self.topDir)
+            
             filterList = [
                 singleImageInfo for singleImageInfo in imageInfo
-                if criteria(singleImageInfo)
+                if criteria(singleImageInfo) and \
+                    not self.isInOrIsFilterDir(relDsDir/singleImageInfo['IMG'], self.filteredDirList)
             ]
             print('Choose from: %s' % jsonPath)
             if len(filterList) < wantedNum:
@@ -71,11 +82,8 @@ class ImageDsCreator:
                   (numChosen, numTotal, numChosen / numTotal))
 
             totalImageNum = totalImageNum + len(filterList)
-            relDsDir = str(
-                pathlib.Path(
-                    os.path.relpath(os.path.dirname(jsonPath),
-                                    self.topDir)).as_posix())
-            self.imageInfoListList.append((relDsDir, filterList))
+
+            self.imageInfoListList.append((str(relDsDir.as_posix()), filterList))
 
         print('Total image num after filtering: %s' % totalImageNum)
 
@@ -147,17 +155,32 @@ class ImageDsCreator:
             normalizeFreDF, on="LBL", how="left", coalesce=True)
         
         
-        lblArray = fianlDF['LBL_NEW'].to_numpy()
+        lblArray = fianlDF['LBL_NEW'].to_numpy().copy()
+        lblList = np.unique(lblArray)
+        lblNexIdcs = range(len(lblList))
+        reMapLbl = {}
+        for oldLbl,newLbl in zip(lblList,lblNexIdcs):
+            reMapLbl[oldLbl] = newLbl
+        n_lblArray = lblArray.copy()
+        for i,lbl in enumerate(lblArray):
+            n_lblArray[i]=reMapLbl[lbl]
+
         weightArray = fianlDF['WEIGHT'].to_numpy()
-        weightArray = weightArray/sum(weightArray)
-        poseLblBins = normalizeFreqWithPoseDF['LBL_NEW'].to_numpy(allow_copy=True)
+        
+        poseLblBins = lblNexIdcs #normalizeFreqWithPoseDF['LBL_NEW'].to_numpy(allow_copy=True)
         poseLblBins = np.sort(poseLblBins)
 
-        sampleResult = np.random.choice(lblArray,100000,p=weightArray)
-        fig = plt.figure(figsize=(24, 8))
+        weightArray = weightArray/sum(weightArray)
+        sampleResult = np.random.choice(n_lblArray,100000,p=weightArray)
+
+        # sampleResult = torch.multinomial(torch.tensor(weightArray), 100000, replacement=True).numpy()
+        # sampleResult = n_lblArray[sampleResult]
+
+        fig = plt.figure(figsize=(100, 8))
         ax = fig.add_subplot(1,1,1)
         ax.set_title('PDF')
-        ns, edgeBin, patches = ax.hist(sampleResult, bins=poseLblBins, rwidth=0.8,label='LBL')
+        ns, edgeBin, bars  = ax.hist(sampleResult, bins=poseLblBins, rwidth=0.8,label='LBL',log=True)
+        plt.bar_label(bars)
         ax.legend(prop={'size': 10})
         plt.grid(True)
         plt.savefig('sample.jpg')
