@@ -138,45 +138,57 @@ class PoseAnalyser:
             with open(path, 'r') as f:
                 self.imageInfoList = json.load(f)
             for imageInfo in self.imageInfoList:
+                # if imageInfo['Q512']>40:
+                #     continue
                 handsPatchList = []
                 if 'POSE_KPTS' in imageInfo.keys() and len(imageInfo['POSE_KPTS']) > 0:
-                    bboxAreaList=[]
-                    for poseDict in imageInfo['POSE_KPTS']:
-                        x1, y1, x2, y2 = poseDict['BBOX']
+                    # bboxAreaList=[]
+                    # for poseDict in imageInfo['POSE_KPTS']:
+                    #     x1, y1, x2, y2 = poseDict['BBOX']
+                    #     area = (x2-x1)*(y2-y1)
+                    #     bboxAreaList.append(area)
+                    # areaOrdinalIdcs = np.argsort(bboxAreaList)
+                    # maxBBOXIdx = areaOrdinalIdcs[-1]
+                    for maxBBOXIdx in range(len(imageInfo['POSE_KPTS'])):
+                        x1, y1, x2, y2 = imageInfo['POSE_KPTS'][maxBBOXIdx]['BBOX']
                         area = (x2-x1)*(y2-y1)
-                        bboxAreaList.append(area)
-                    areaOrdinalIdcs = np.argsort(bboxAreaList)
-                    maxBBOXIdx = areaOrdinalIdcs[-1]
-
-                    validLeftHandsIdcs =[]
-                    for idx in leftHandsIdcs:
-                        if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
-                            validLeftHandsIdcs.append(idx)
-                    if len(validLeftHandsIdcs)>len(leftHandsIdcs)-10:
-                        x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
-                        y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
-                        x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
-                        y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
-                        area = (x2-x1)*(y2-y1)
-                        if area>1e-8:
-                            extendX = (x2-x1)*0.1
-                            extendY = (y2-y1)*0.1
-                            handsPatchList.append((x1-extendX,y1-extendY,x2+extendX,y2+extendY))
-                    
-                    validRHandsIdcs =[]
-                    for idx in rightHandsIdcs:
-                        if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
-                            validRHandsIdcs.append(idx)
-                    if len(validRHandsIdcs)>len(rightHandsIdcs)-10:
-                        x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
-                        y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
-                        x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
-                        y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
-                        area = (x2-x1)*(y2-y1)
-                        if area>1e-8:
-                            extendX = (x2-x1)*0.1
-                            extendY = (y2-y1)*0.1
-                            handsPatchList.append((x1-extendX,y1-extendY,x2+extendX,y2+extendY))
+                        if area<1/8:
+                            continue
+                        validLeftHandsIdcs =[]
+                        for idx in leftHandsIdcs:
+                            if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
+                                validLeftHandsIdcs.append(idx)
+                        if len(validLeftHandsIdcs)>len(leftHandsIdcs)-5:
+                            x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
+                            y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
+                            x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
+                            y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
+                            x_center = np.mean(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validLeftHandsIdcs])
+                            y_center = np.mean(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validLeftHandsIdcs])
+                            crop_w,crop_h = x2-x1,y2-y1
+                            area = crop_w*crop_h
+                            crop_max = max(crop_w,crop_h)
+                            if area>1e-5:
+                                extend = crop_max*0.1
+                                handsPatchList.append((x_center-crop_max/2-extend,y_center-crop_max/2-extend,x2+crop_max/2+extend,y_center+crop_max/2+extend))
+                        
+                        validRHandsIdcs =[]
+                        for idx in rightHandsIdcs:
+                            if idx not in imageInfo['POSE_KPTS'][maxBBOXIdx]['INVLD_KPTS_IDX']:
+                                validRHandsIdcs.append(idx)
+                        if len(validRHandsIdcs)>len(rightHandsIdcs)-5:
+                            x1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
+                            y1 = min(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
+                            x2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
+                            y2 = max(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
+                            x_center = np.mean(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_X'])[validRHandsIdcs])
+                            y_center = np.mean(np.asarray(imageInfo['POSE_KPTS'][maxBBOXIdx]['KPTS_Y'])[validRHandsIdcs])
+                            crop_w,crop_h = x2-x1,y2-y1
+                            area = crop_w*crop_h
+                            crop_max = max(crop_w,crop_h)
+                            if area>1e-5:
+                                extend = crop_max*0.1
+                                handsPatchList.append((x_center-crop_max/2-extend,y_center-crop_max/2-extend,x2+crop_max/2+extend,y_center+crop_max/2+extend))
 
                     self.handsPatchDict[os.path.join(relDsDir,imageInfo['IMG'])
                                     ] = handsPatchList
@@ -190,11 +202,11 @@ class PoseAnalyser:
             w,h = img.size
             for hand in handsPatchList:
                 handImage = img.crop((hand[0]*w,hand[1]*h,hand[2]*w,hand[3]*h))
-                handImage = PIL.ImageOps.pad(handImage,(64,64))
+                handImage = PIL.ImageOps.pad(handImage,(100,100))
                 preparedImages.append(handImage)
                 handsCount = handsCount+1
                 if len(preparedImages)==col*row:
-                    self.genImageJiasaw(preparedImages,64,64,col,row,os.path.join('HandsResultSample',f'{handsCount}.webp'))
+                    self.genImageJiasaw(preparedImages,100,100,col,row,os.path.join('HandsResultSample',f'{handsCount}.webp'))
                     preparedImages = []
 
 
