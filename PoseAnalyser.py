@@ -373,8 +373,8 @@ class PoseAnalyser:
                         boxLBX = sortedIdcs[:maxHumanNum*2]
                         boxLBY = sortedIdcs[:maxHumanNum*2]
 
-                    x_ltop,y_ltop,_,_ = imageInfo['POSE_KPTS'][sortedIdcs[0]]['BBOX']
-                    _,_,x_rbottom,y_rbottom = imageInfo['POSE_KPTS'][sortedIdcs[-1]]['BBOX']
+                    x_ltop,y_ltop = min(boxLBX),min(boxLBY)
+                    x_rbottom,y_rbottom = max(boxLBX),max(boxLBY)
                     w,h=x_rbottom-x_ltop,y_rbottom-y_ltop
                     if w*h<1e-2:
                         continue
@@ -510,7 +510,7 @@ class PoseAnalyser:
     def analyzeClusterNum(self):
         embeddingDict = self.genHumanPositionEmbedding()
         clusterTool = ClusterTool(embeddingDict,'HumanPostionClusterCache',self.topDir,'HumanPostionClusterResult')
-        clusterTool.clusterTrials(clusterCenterNumList=range(50,1000,10))
+        clusterTool.clusterTrials(clusterCenterNumList=range(50,300,10))
             
 
 
