@@ -351,43 +351,61 @@ class PoseAnalyser:
             maxHumanNum = 5
             for imageInfo in self.imageInfoList:
                 if 'POSE_KPTS' in imageInfo.keys() and len(imageInfo['POSE_KPTS']) > 0:
+                    bboxAreaList=[]
+                    for poseDict in imageInfo['POSE_KPTS']:
+                        x1, y1, x2, y2 = poseDict['BBOX']
+                        area = (x2-x1)*(y2-y1)
+                        bboxAreaList.append(area)
+                    bboxAreaList = np.asarray(bboxAreaList)
+                    areaOrdinalIdcs = np.argsort(bboxAreaList)
+
+
+
+                    maxArea = bboxAreaList[areaOrdinalIdcs[-1]]
+                    areaVsMaxAreaList = bboxAreaList/maxArea
+                    validBboxIdcsList = areaOrdinalIdcs[areaVsMaxAreaList[areaOrdinalIdcs]>0.3]
+
+                    if len(validBboxIdcsList)>maxHumanNum:
+                        validBboxIdcsList = validBboxIdcsList[len(validBboxIdcsList)-maxHumanNum:]
+
                     boxCenterX = []
                     boxCenterY = []
                     boxLBX =[]
                     boxLBY=[]
-                    for poseDict in imageInfo['POSE_KPTS']:
-                        x1, y1, x2, y2 = poseDict['BBOX']
+                    for bboxIdx in validBboxIdcsList:
+                        x1, y1, x2, y2 =imageInfo['POSE_KPTS'][bboxIdx]['BBOX']
                         boxCenterX.append((x1+x2)/2)
                         boxCenterY.append((y1+y2)/2)
-                        boxLBX.append(x1)
-                        boxLBX.append(x2)
-                        boxLBY.append(y1)
-                        boxLBY.append(y2)
+                        boxLBX.append((x1,x2))
+                        boxLBY.append((y1,y2))
                 
                     sortedIdcs = np.lexsort((boxCenterY,boxCenterX))
                     boxLBX = np.asarray(boxLBX)
                     boxLBY = np.asarray(boxLBY)
+                    boxCenterX = np.asarray(boxCenterX)
+                    boxCenterY = np.asarray(boxCenterY)
                     
-                    if len(sortedIdcs)>maxHumanNum:
-                        sortedIdcs = sortedIdcs[:maxHumanNum]
-                        boxLBX = sortedIdcs[:maxHumanNum*2]
-                        boxLBY = sortedIdcs[:maxHumanNum*2]
 
-                    x_ltop,y_ltop = min(boxLBX),min(boxLBY)
-                    x_rbottom,y_rbottom = max(boxLBX),max(boxLBY)
+                    boxLBX = boxLBX[sortedIdcs]
+                    boxLBY = boxLBY[sortedIdcs]
+                    boxCenterX = boxCenterX[sortedIdcs]
+                    boxCenterY = boxCenterY[sortedIdcs]
+
+                    x_ltop,y_ltop = np.min(boxLBX),np.min(boxLBY)
+                    x_rbottom,y_rbottom = np.max(boxLBX),np.max(boxLBY)
                     w,h=x_rbottom-x_ltop,y_rbottom-y_ltop
                     if w*h<1e-2:
                         continue
                     resize_ratio = math.sqrt(1/(w*h))
-                    boxLBX = (boxLBX-x_ltop)*resize_ratio
-                    boxLBY = (boxLBY-y_ltop)*resize_ratio
+                    boxCenterX = (boxCenterX-x_ltop)*resize_ratio
+                    boxCenterY = (boxCenterY-y_ltop)*resize_ratio
 
-                    x_center = np.mean(boxLBX)
-                    y_center = np.mean(boxLBY)
-                    x_coords = (boxLBX-x_center)
-                    x_coords.resize(maxHumanNum*2)
-                    y_coords = (boxLBY-y_center)
-                    y_coords.resize(maxHumanNum*2)
+                    x_center = np.mean(boxCenterX)
+                    y_center = np.mean(boxCenterY)
+                    x_coords = (boxCenterX-x_center)
+                    x_coords.resize(maxHumanNum)
+                    y_coords = (boxCenterY-y_center)
+                    y_coords.resize(maxHumanNum)
                     
 
                     embeddingDict[os.path.join(relDsDir,imageInfo['IMG'])
@@ -496,7 +514,7 @@ class PoseAnalyser:
         if not clusterTool.loadClusterResult():
             embeddingDict = self.genHumanPositionEmbedding()
             clusterTool = ClusterTool(embeddingDict,'HumanPostionClusterCache',self.topDir,'HumanPostionClusterResult')
-            clusterTool.cluster(clusterNum=100)
+            clusterTool.cluster(clusterNum=300)
             # if self.embeddingDict:
             #     X_tsne = self.reduceDim()
             #     self.visualizeClusterResult(X_tsne, self.poseLabels,
@@ -510,7 +528,7 @@ class PoseAnalyser:
     def analyzeClusterNum(self):
         embeddingDict = self.genHumanPositionEmbedding()
         clusterTool = ClusterTool(embeddingDict,'HumanPostionClusterCache',self.topDir,'HumanPostionClusterResult')
-        clusterTool.clusterTrials(clusterCenterNumList=range(50,300,10))
+        clusterTool.clusterTrials(clusterCenterNumList=range(50,2000,50))
             
 
 
