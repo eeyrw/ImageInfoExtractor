@@ -397,15 +397,15 @@ class PoseAnalyser:
                     if w*h<1e-2:
                         continue
                     resize_ratio = math.sqrt(1/(w*h))
-                    boxCenterX = (boxCenterX-x_ltop)*resize_ratio
-                    boxCenterY = (boxCenterY-y_ltop)*resize_ratio
+                    boxLBX = (boxLBX-x_ltop)*resize_ratio
+                    boxLBY = (boxLBY-y_ltop)*resize_ratio
 
-                    x_center = np.mean(boxCenterX)
-                    y_center = np.mean(boxCenterY)
-                    x_coords = (boxCenterX-x_center)
-                    x_coords.resize(maxHumanNum)
-                    y_coords = (boxCenterY-y_center)
-                    y_coords.resize(maxHumanNum)
+                    x_center = np.mean(boxLBX)
+                    y_center = np.mean(boxLBY)
+                    x_coords = (boxLBX-x_center)
+                    x_coords.resize(maxHumanNum*2)
+                    y_coords = (boxLBY-y_center)
+                    y_coords.resize(maxHumanNum*2)
                     
 
                     embeddingDict[os.path.join(relDsDir,imageInfo['IMG'])
@@ -514,7 +514,7 @@ class PoseAnalyser:
         if not clusterTool.loadClusterResult():
             embeddingDict = self.genHumanPositionEmbedding()
             clusterTool = ClusterTool(embeddingDict,'HumanPostionClusterCache',self.topDir,'HumanPostionClusterResult')
-            clusterTool.cluster(clusterNum=300)
+            clusterTool.cluster(clusterNum=250)
             # if self.embeddingDict:
             #     X_tsne = self.reduceDim()
             #     self.visualizeClusterResult(X_tsne, self.poseLabels,
