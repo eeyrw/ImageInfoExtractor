@@ -1,5 +1,5 @@
 import cv2
-from rtmlib import Body, Wholebody, draw_skeleton
+from rtmlib import Body, Wholebody, draw_skeleton,draw_bbox
 from PIL import Image
 import os
 import numpy as np
@@ -10,18 +10,18 @@ class Predictor():
     def __init__(self, weightsDir='.', device='cpu') -> None:
         backend = 'onnxruntime'  # opencv, onnxruntime, openvino
         openpose_skeleton = False  # True for openpose-style, False for mmpose-style
-        # self.model = Wholebody(
+        self.model = Wholebody(
+            to_openpose=openpose_skeleton,
+            # pose=os.path.join(weightsDir, 'dw-ll_ucoco_384.onnx'),
+            mode='balanced',  # 'performance', 'lightweight', 'balanced'. Default: 'balanced'
+            backend=backend,
+            device=device)
+        # self.model = Body(
         #     to_openpose=openpose_skeleton,
         #     # pose=os.path.join(weightsDir, 'dw-ll_ucoco_384.onnx'),
         #     mode='performance',  # 'performance', 'lightweight', 'balanced'. Default: 'balanced'
         #     backend=backend,
         #     device=device)
-        self.model = Body(
-            to_openpose=openpose_skeleton,
-            # pose=os.path.join(weightsDir, 'dw-ll_ucoco_384.onnx'),
-            mode='performance',  # 'performance', 'lightweight', 'balanced'. Default: 'balanced'
-            backend=backend,
-            device=device)
 
     def predict(self, img, debug=False):
         width, height = img.size
@@ -40,6 +40,7 @@ class Predictor():
                                         openpose_skeleton=False,
                                         kpt_thr=kpt_thr,
                                         line_width=2)
+                img_show = draw_bbox(img_show,bboxes)
                 cv2.imwrite('c.jpg', img_show)
 
             keypoints_mapped = []
@@ -80,6 +81,8 @@ def pil_loader(path):
 
 
 if __name__ == "__main__":
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
     pr = Predictor(weightsDir='DLToolWeights')
     with open('aa.jpg', 'rb') as f:
         imgs = Image.open(f).convert('RGB')

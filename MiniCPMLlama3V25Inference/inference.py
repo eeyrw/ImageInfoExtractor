@@ -48,6 +48,11 @@ if __name__ == '__main__':
     img = PIL.Image.open('a.jpg').convert('RGB')
     for i in range(100):
         result = pr.predict(img,prompt=prompt)
-        info = json.loads(result[0]['caption'])
-        print(info)
+        try:
+            info = json.loads(result[0]['caption'])
+            print(info)
+
+        except Exception as e:
+            print(result[0]['caption'])
+            print(e)
 
