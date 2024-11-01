@@ -87,7 +87,38 @@ class ImageDsCreator:
 
         print('Total image num after filtering: %s' % totalImageNum)
 
-    def balanceDatasetByPose(self, posePklDir):
+    def testWeightedDataset(self,dataFrame):
+        lblArray = dataFrame['LBL_NEW'].to_numpy().copy()
+        lblList = np.unique(lblArray)
+        lblNexIdcs = range(len(lblList))
+        reMapLbl = {}
+        for oldLbl,newLbl in zip(lblList,lblNexIdcs):
+            reMapLbl[oldLbl] = newLbl
+        n_lblArray = lblArray.copy()
+        for i,lbl in enumerate(lblArray):
+            n_lblArray[i]=reMapLbl[lbl]
+
+        weightArray = dataFrame['WEIGHT'].to_numpy()
+        
+        poseLblBins = lblNexIdcs #normalizeFreqWithPoseDF['LBL_NEW'].to_numpy(allow_copy=True)
+        poseLblBins = np.sort(poseLblBins)
+
+        weightArray = weightArray/sum(weightArray)
+        sampleResult = np.random.choice(n_lblArray,100000,p=weightArray)
+
+        # sampleResult = torch.multinomial(torch.tensor(weightArray), 100000, replacement=True).numpy()
+        # sampleResult = n_lblArray[sampleResult]
+
+        fig = plt.figure(figsize=(100, 8))
+        ax = fig.add_subplot(1,1,1)
+        ax.set_title('PDF')
+        ns, edgeBin, bars  = ax.hist(sampleResult, bins=poseLblBins, rwidth=0.8,label='LBL',log=True)
+        plt.bar_label(bars)
+        ax.legend(prop={'size': 10})
+        plt.grid(True)
+        plt.savefig('sample.jpg')
+
+    def balanceDatasetByPose(self, posePklDir,wantedSampleNum=None,output=None):
         clusterModel = joblib.load(os.path.join(posePklDir,
                                                 'ClusterModel.pkl'))
         with open(os.path.join(posePklDir, 'PoseImagesList.pkl'), 'rb') as f:
@@ -148,44 +179,14 @@ class ImageDsCreator:
         )
 
         
-
-
-        
         fianlDF = filterImagesWithLabelsDF.join(
             normalizeFreDF, on="LBL", how="left", coalesce=True)
         
-        
-        lblArray = fianlDF['LBL_NEW'].to_numpy().copy()
-        lblList = np.unique(lblArray)
-        lblNexIdcs = range(len(lblList))
-        reMapLbl = {}
-        for oldLbl,newLbl in zip(lblList,lblNexIdcs):
-            reMapLbl[oldLbl] = newLbl
-        n_lblArray = lblArray.copy()
-        for i,lbl in enumerate(lblArray):
-            n_lblArray[i]=reMapLbl[lbl]
+        self.testWeightedDataset(fianlDF)
 
-        weightArray = fianlDF['WEIGHT'].to_numpy()
-        
-        poseLblBins = lblNexIdcs #normalizeFreqWithPoseDF['LBL_NEW'].to_numpy(allow_copy=True)
-        poseLblBins = np.sort(poseLblBins)
-
-        weightArray = weightArray/sum(weightArray)
-        sampleResult = np.random.choice(n_lblArray,100000,p=weightArray)
-
-        # sampleResult = torch.multinomial(torch.tensor(weightArray), 100000, replacement=True).numpy()
-        # sampleResult = n_lblArray[sampleResult]
-
-        fig = plt.figure(figsize=(100, 8))
-        ax = fig.add_subplot(1,1,1)
-        ax.set_title('PDF')
-        ns, edgeBin, bars  = ax.hist(sampleResult, bins=poseLblBins, rwidth=0.8,label='LBL',log=True)
-        plt.bar_label(bars)
-        ax.legend(prop={'size': 10})
-        plt.grid(True)
-        plt.savefig('sample.jpg')
-
-        fianlDF.write_json(os.path.join(self.outputDir,'ImageInfoWeighted.json'))
+        if output is None:
+            output = os.path.join(self.outputDir,'ImageInfoWeighted.json')
+        fianlDF.write_json(output)
 
 
     def generate(self, flattenDir=False):
