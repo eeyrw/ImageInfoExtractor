@@ -129,7 +129,12 @@ dmypy.json
 .pyre/
 
 # PyTorch weight
+/ImageInfoExtractor/DLToolWeights
 /DLToolWeights
 /TaskPipelines
 /ClusterResultSample
 /PoseClusterCache
+/HandsResultSample
+/HumanPositionClusterResult
+/HumanPositionClusterCache
+/TestResultSample

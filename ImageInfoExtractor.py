@@ -10,7 +10,6 @@ import hpyerIQAInference.inference
 import FBCNNInference.inference
 import BLIPInference.predict_simple
 from PIL import Image
-import TorchDeepDanbooruInference.inference
 import WDVitTaggerV3.inference
 import Aesthetic
 import RealESRGANInference.inference_realesrgan
@@ -26,6 +25,7 @@ from shutil import copyfile, move
 import math
 import OCRInference.inference
 import WatermarkDetectionInference.inference_simple
+import YoloInference.inference
 from PIL import ImageDraw
 from pathlib import Path, PurePath
 import numpy as np
@@ -421,6 +421,26 @@ class ImagePoseEstimateTool:
     def fieldSet():
         return set(['POSE_KPTS'])
 
+
+class ImageObjectDetectTool:
+    def __init__(self, topDir, device='cuda',name=None) -> None:
+        self.imageObjectDetectPredictor = YoloInference.inference.Predictor(
+            weightsDir='./DLToolWeights',weightName=name,device=device)
+
+    def update(self, imageInfo, topDir):
+        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+        return imageInfo
+    
+    def getUpdateDict(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        preds = self.imageObjectDetectPredictor.predict(img)
+        return preds
+    
+    @staticmethod
+    def fieldSet():
+        return set(['OBJS'])
+
 # class ImageFilterTool:
 #     def __init__(self, topDir) -> None:
 #         self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k',
@@ -541,10 +561,6 @@ class ImageCaptionTool:
         elif captionModel == 'BLIP2':
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
-        elif captionModel == 'LLAVA':
-            import LlavaInference.inference
-            self.imageCaptionPredictor = LlavaInference.inference.Predictor(
-                weightsDir='/large_tmp/')
 
     def update(self, imageInfo, topDir):
         img = hpyerIQAInference.inference.pil_loader(
