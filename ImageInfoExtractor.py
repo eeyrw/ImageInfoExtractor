@@ -1,3 +1,4 @@
+import itertools
 import sys
 from pillow_heif import register_heif_opener
 from tqdm import tqdm
@@ -56,7 +57,10 @@ class BatchInferenceDataset(Dataset):
         image_path = os.path.join(self.topDir,
                                   self.imageInfoList[idx]['IMG'])
         image = Image.open(image_path).convert('RGB')
-        x = self.transform(image)
+        if self.transform:
+            x = self.transform(image)
+        else:
+            x = image
         return idx, x
 
 
@@ -426,7 +430,7 @@ class ImageObjectDetectTool:
     def __init__(self, topDir, device='cuda',name=None) -> None:
         self.imageObjectDetectPredictor = YoloInference.inference.Predictor(
             weightsDir='./DLToolWeights',weightName=name,device=device)
-
+        self.transform = self.imageObjectDetectPredictor.transform
     def update(self, imageInfo, topDir):
         imageInfo.update(self.getUpdateDict(imageInfo, topDir))
         return imageInfo
@@ -436,6 +440,17 @@ class ImageObjectDetectTool:
             os.path.join(topDir, imageInfo['IMG']))
         preds = self.imageObjectDetectPredictor.predict(img)
         return preds
+    
+    def update_batch(self, imgs):
+        return self.imageObjectDetectPredictor.predict_batch(imgs)
+    @staticmethod
+    def supportBatchInference():
+        return True
+
+    @staticmethod
+    def custom_collate(original_batch):
+        trans = list(map(list, itertools.zip_longest(*original_batch, fillvalue=None)))
+        return trans
     
     @staticmethod
     def fieldSet():
@@ -765,10 +780,16 @@ class ImageInfoManager:
                     if hasattr(processTool, 'supportBatchInference') and processTool.supportBatchInference():
                         ds = BatchInferenceDataset(
                             self.topDir, self.imageInfoList, processDict['itemIdx'], toolInstance.transform)
+
+                        if hasattr(processTool, 'custom_collate'):
+                            custom_collate = processTool.custom_collate
+                        else:
+                            custom_collate = None
                         dtldr = DataLoader(ds,
                                         batch_size=processDict['batchsize'],
                                         shuffle=False,
                                         num_workers=processDict['num_workers'],
+                                        collate_fn=custom_collate,
                                         drop_last=False)
                         with tqdm(total=len(ds)) as pbar:
                             lastTs = time.time()
