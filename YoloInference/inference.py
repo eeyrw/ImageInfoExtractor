@@ -17,28 +17,22 @@ class Predictor():
 
     def predict(self, img, debug=False):
         results = self.model(img,verbose=False)
-        finalOut = []
-        for result in results:
-            clsList = result.boxes.cls.reshape(-1,1)
-            confList = result.boxes.conf.reshape(-1,1)
-            xywhnList = result.boxes.xywhn
-            ccxywhnList = torch.concat((confList,clsList,xywhnList),1).cpu().numpy().round(5)
-            finalOut.append(ccxywhnList)
-        return {'OBJS':{'CLS':self.classNameDict,'RESULTS':finalOut}}
+        clsList = results.boxes.cls.reshape(-1,1)
+        confList = results.boxes.conf.reshape(-1,1)
+        xywhnList = results.boxes.xywhn
+        ccxywhnList = torch.concat((confList,clsList,xywhnList),1).cpu().numpy().round(5)
+        return {'OBJS':{'CLS':self.classNameDict,'RESULTS':ccxywhnList}}
     
     def predict_batch(self, imgs):
         with torch.no_grad():
             resultss = self.model(imgs,verbose=False)
             finalOuts=[]
             for results in resultss:
-                finalOut = []
-                for result in results:
-                    clsList = result.boxes.cls.reshape(-1,1)
-                    confList = result.boxes.conf.reshape(-1,1)
-                    xywhnList = result.boxes.xywhn
-                    ccxywhnList = torch.concat((confList,clsList,xywhnList),1).cpu().numpy().round(5)
-                    finalOut.append(ccxywhnList)    
-                finalOuts.append({'OBJS':{'CLS':self.classNameDict,'RESULTS':finalOut}})
+                clsList = results.boxes.cls.reshape(-1,1)
+                confList = results.boxes.conf.reshape(-1,1)
+                xywhnList = results.boxes.xywhn
+                ccxywhnList = torch.concat((confList,clsList,xywhnList),1).cpu().numpy().round(5) 
+                finalOuts.append({'OBJS':{'CLS':self.classNameDict,'RESULTS':ccxywhnList}})
         return finalOuts
 
 
