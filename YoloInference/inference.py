@@ -16,7 +16,7 @@ class Predictor():
         self.transform = None
 
     def predict(self, img, debug=False):
-        results = self.model(img,verbose=False)
+        results = self.model(img,verbose=False)[0]
         clsList = results.boxes.cls.reshape(-1,1)
         confList = results.boxes.conf.reshape(-1,1)
         xywhnList = results.boxes.xywhn
