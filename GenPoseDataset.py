@@ -1,5 +1,6 @@
 import json
 import math
+import shutil
 from time import time
 import PIL
 import cv2
@@ -12,8 +13,7 @@ from PIL import Image, ImageFont, ImageDraw
 from scipy.spatial import distance_matrix
 from pillow_heif import register_heif_opener
 from scipy.optimize import linear_sum_assignment
-from MultiDatasetExtractor import MultiDatasetExtractor
-
+from tqdm import tqdm
 register_heif_opener()
 
 male20 = dict(name='male20',
@@ -212,6 +212,136 @@ male20 = dict(name='male20',
               })
 
 
+class COCODsCreator:
+    def __init__(self, dsDir, imageRootDir) -> None:
+        self.dsDir = dsDir
+        self.imageRootDir = imageRootDir
+        if not os.path.exists(self.dsDir):
+            os.makedirs(self.dsDir)
+        self.ds = {
+            "info": {},
+            "images": [],
+            "annotations": [],
+            "categories": []
+        }
+        self.imageIdCounter = 0
+        self.annoIdCounter = 0
+
+    def addKeypointMetaInfo(self, supercategory, name, keypointsInfoDict):
+        link_dict = {}
+        linkList = []
+        for i, kpt_info in keypointsInfoDict['keypoint_info'].items():
+            link_dict[kpt_info['name']] = kpt_info['id']
+            linkList.append((kpt_info['id'], kpt_info['name']))
+
+        linkList.sort(key=lambda x: x[0])
+        keypoints = [x[1] for x in linkList]
+
+        skeleton = []
+        for i, ske_info in keypointsInfoDict['skeleton_info'].items():
+            link = ske_info['link']
+            pt0, pt1 = link_dict[link[0]], link_dict[link[1]]
+            skeleton.append((pt0, pt1))
+
+        self.ds['categories'].append({
+            "supercategory": supercategory,
+            "id": 1,
+            "name": name,
+            'keypoints': keypoints,
+            'skeleton': skeleton
+        })
+
+    def processImage(self, imageRoot, imageInfo, maxPixels):
+        relPath = imageInfo['file_name']
+        imagePath = os.path.join(imageRoot, relPath)
+        with Image.open(imagePath) as im:
+            im = im.convert('RGB')
+            actualW, actualH = im.size
+            if actualW*actualH > maxPixels:
+                aspectRatio = actualH/actualW
+                resizedW = math.sqrt(maxPixels/aspectRatio)
+                resizedH = resizedW*aspectRatio
+                resizedW = int(resizedW)
+                resizedH = int(resizedH)
+                im = im.resize((resizedW, resizedH))
+                imageInfo['width'] = resizedW
+                imageInfo['height'] = resizedH
+
+        relPath = os.path.splitext(relPath)[0]+'.webp'
+        imageInfo['file_name'] = relPath
+        im.save(os.path.join(self.dsDir, relPath), "WEBP", quality=90)
+        return imageInfo
+
+    def copyImage(self, flattenDir=False):
+        print('Copy %d images to %s from %s' %
+              (len(self.ds['images']), self.dsDir, self.imageRootDir))
+        for singleImageInfo in tqdm(self.ds['images']):
+            orinPath = os.path.join(
+                self.imageRootDir, singleImageInfo['file_name'])
+
+            if flattenDir:
+                targetDir = self.dsDir
+                newFileName = singleImageInfo['file_name'].replace(
+                    '/', '_').replace('\\', '_')
+                singleImageInfo['IMG'] = newFileName
+            else:
+                targetDir = os.path.join(
+                    self.dsDir, os.path.dirname(singleImageInfo['file_name']))
+            if not os.path.isdir(targetDir):
+                os.makedirs(targetDir)
+            singleImageInfo.update(self.processImage(
+                self.imageRootDir, singleImageInfo, 2048*2048))
+
+    def addImage(self, imagePath, w, h):
+        currentId = self.imageIdCounter
+        self.ds['images'].append({
+            "file_name": imagePath,
+            "height": h,
+            "width": w,
+            'id': currentId
+        })
+        self.imageIdCounter = self.imageIdCounter+1
+        return currentId
+
+    def addKeypointAnno(self, imageId, anno):
+        w, h = anno['W'], anno['H']
+        for item in anno['POSE_KPTS']:
+            kptsX = np.asarray(item['KPTS_X'])*w
+            kptsY = np.asarray(item['KPTS_Y'])*h
+            pointsVis = np.ones_like(kptsX, dtype=np.int32)
+            pointsVis[item['INVLD_KPTS_IDX']] = 0
+            keypoints = np.vstack((kptsX, kptsY, pointsVis)).reshape(
+                (-1,), order='F').tolist()
+            x1, y1, x2, y2 = item['BBOX']
+            xywh = (x1*w, y1*h, (x2-x1)*w, (y2-y1)*h)
+            self.ds['annotations'].append(
+                {
+                    "num_keypoints": len(item['KPTS_X'])-len(item['INVLD_KPTS_IDX']),
+                    "keypoints": keypoints,
+                    "image_id": imageId,
+                    "bbox": xywh,
+                    "category_id": 1,
+                    "id": self.annoIdCounter
+                }
+            )
+            self.annoIdCounter = self.annoIdCounter+1
+
+    def saveAnnoation(self):
+        class NpEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                if isinstance(obj, np.floating):
+                    return float(obj)
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return super(NpEncoder, self).default(obj)
+        tempFilePath = os.path.join(self.dsDir, 'annoations.json.lock')
+        with open(tempFilePath, 'w', encoding='utf8') as f:
+            json.dump(self.ds, f, cls=NpEncoder)
+        shutil.move(tempFilePath, os.path.join(self.dsDir, 'annoations.json'))
+
+
 class PoseDsCreator:
 
     def __init__(self, dsPath) -> None:
@@ -238,7 +368,7 @@ class PoseDsCreator:
         rawImagesIdxList = list(range(len(self.imageInfoList)))
         rng = np.random.default_rng()
         resampleList = rng.choice(rawImagesIdxList,
-                                  8888,
+                                  100,
                                   replace=False,
                                   p=self.imagesWeightList)
         self.imagesIdxList = resampleList.tolist()
@@ -406,7 +536,7 @@ class PoseDsCreator:
                 poseDict['KPTS_Y'].extend((possbileDickRoot[1], possbileDickMid[1],
                                           possbileDickHead[1], possibleBallLeft[1], possibleBallRight[1]))
                 poseDict['INVLD_KPTS_IDX'].extend((17, 18, 19, 20, 21))
-        print(anno['IMG'], dickSetDict)
+        # print(anno['IMG'], dickSetDict)
         return anno['POSE_KPTS']
 
     def xywhnTox1y1x2y2n(self, xywhnList):
@@ -519,19 +649,22 @@ class PoseDsCreator:
 
         return image
 
-    def genTestResult(self):
-        preparedImages = []
+    def prepareSamples(self):
         with open(self.dsPath, 'r') as f:
             self.imageInfoList = json.load(f)
         self.imagesWeightList = np.asarray(
             [imageInfo['WEIGHT'] for imageInfo in self.imageInfoList])
         self.imagesWeightList /= self.imagesWeightList.sum()
         self.resample_ds_by_weight()
+        for idx in tqdm(self.imagesIdxList):
+            self.imageInfoList[idx]['POSE_KPTS'] = self.generateKeyPoint(
+                self.imageInfoList[idx])
 
+    def genTestResult(self):
+        self.prepareSamples()
         col = 5
         row = 5
         n = col * row
-
         for i, idxList in enumerate([
                 self.imagesIdxList[i:i + n]
                 for i in range(0, len(self.imagesIdxList), n)
@@ -541,15 +674,30 @@ class PoseDsCreator:
                 dsDir = os.path.dirname(self.dsPath)
                 img = Image.open(os.path.join(
                     dsDir, self.imageInfoList[idx]['IMG'])).convert('RGB')
-
                 img = self.drawBBoxes(img, self.imageInfoList[idx]['OBJS'])
                 img = self.drawSkleton(
-                    img, self.generateKeyPoint(self.imageInfoList[idx]))
+                    img, self.imageInfoList[idx]['POSE_KPTS'])
                 img = PIL.ImageOps.pad(img, (512, 512))
                 preparedImages.append(img)
             self.genImageJiasaw(preparedImages, 512, 512, col, row, os.path.join(
                 'TestResultSample', f'{i}.webp'))
 
+    def genCOCODs(self):
+        self.prepareSamples()
+        cocoDs = COCODsCreator('CCOCODsout', os.path.dirname(self.dsPath))
+        cocoDs.addKeypointMetaInfo('person', 'person', male20)
+        for idx in tqdm(self.imagesIdxList):
+            imageInfo = self.imageInfoList[idx]
+            imageId = cocoDs.addImage(
+                imageInfo['IMG'], imageInfo['W'], imageInfo['H'])
+            cocoDs.addKeypointAnno(imageId, imageInfo)
+        cocoDs.copyImage()
+        cocoDs.saveAnnoation()
 
-wt = PoseDsCreator('xxxx')
-wt.genTestResult()
+
+wt = PoseDsCreator('xxx')
+wt.genCOCODs()
+
+# cocoDs = COCODsCreator('。')
+# cocoDs.addKeypointMetaInfo('person', 'person', male20)
+# print(cocoDs.ds)
