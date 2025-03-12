@@ -97,7 +97,7 @@ class CryptImageDsExporter:
 
             with zipfile.ZipFile(os.path.join(self.outputDir, f'{self.datasetName}_ImageInfo.zip'), 'w') as myzip:
                 zipper.encrpyt(json.dumps(self.imageInfoList).encode('utf8'))
-                myzip.writestr('ImageInfo.json', zipper.encrpyt(json.dumps(self.imageInfoList).encode('utf8')),
+                myzip.writestr(os.path.join(self.datasetName, 'ImageInfo.json'), zipper.encrpyt(json.dumps(self.imageInfoList).encode('utf8')),
                                compress_type=zipfile.ZIP_DEFLATED)
 
 
