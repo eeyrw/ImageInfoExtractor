@@ -13,13 +13,13 @@
             "justMyCode": false
         },
         {
-            "name": "IQAdemo",
+            "name": "MyDsCreatorRunner.py",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/hyperIQA/demo.py",
+            "program": "${workspaceFolder}/TaskPipelines/MyDsCreatorRunner.py",
             "console": "integratedTerminal",
-            "justMyCode": true,
-            "cwd": "${workspaceFolder}/hyperIQA"
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

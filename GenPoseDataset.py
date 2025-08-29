@@ -269,7 +269,8 @@ class COCODsCreator:
 
         relPath = os.path.splitext(relPath)[0]+'.webp'
         imageInfo['file_name'] = relPath
-        im.save(os.path.join(self.dsDir, relPath), "WEBP", quality=90)
+        im.save(os.path.join(self.dsDir, 'images',
+                'train', relPath), "WEBP", quality=90)
         return imageInfo
 
     def copyImage(self, flattenDir=False):
@@ -286,7 +287,7 @@ class COCODsCreator:
                 singleImageInfo['IMG'] = newFileName
             else:
                 targetDir = os.path.join(
-                    self.dsDir, os.path.dirname(singleImageInfo['file_name']))
+                    self.dsDir, 'images', 'train', os.path.dirname(singleImageInfo['file_name']))
             if not os.path.isdir(targetDir):
                 os.makedirs(targetDir)
             singleImageInfo.update(self.processImage(
@@ -321,6 +322,8 @@ class COCODsCreator:
                     "image_id": imageId,
                     "bbox": xywh,
                     "category_id": 1,
+                    "iscrowd": 0,
+                    "segmentation":[],
                     "id": self.annoIdCounter
                 }
             )
@@ -336,10 +339,14 @@ class COCODsCreator:
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return super(NpEncoder, self).default(obj)
-        tempFilePath = os.path.join(self.dsDir, 'annoations.json.lock')
+        if not os.path.exists(os.path.join(self.dsDir, 'annotations')):
+            os.makedirs(os.path.join(self.dsDir, 'annotations'))
+        tempFilePath = os.path.join(
+            self.dsDir, 'annotations', 'person_keypoints_train.json.lock')
         with open(tempFilePath, 'w', encoding='utf8') as f:
             json.dump(self.ds, f, cls=NpEncoder)
-        shutil.move(tempFilePath, os.path.join(self.dsDir, 'annoations.json'))
+        shutil.move(tempFilePath, os.path.join(
+            self.dsDir, 'annotations', 'person_keypoints_train.json'))
 
 
 class PoseDsCreator:
@@ -366,7 +373,7 @@ class PoseDsCreator:
     def resample_ds_by_weight(self):
         print('Resample DS')
         rawImagesIdxList = list(range(len(self.imageInfoList)))
-        rng = np.random.default_rng()
+        rng = np.random.default_rng(seed=42)
         resampleList = rng.choice(rawImagesIdxList,
                                   100,
                                   replace=False,
@@ -695,7 +702,7 @@ class PoseDsCreator:
         cocoDs.saveAnnoation()
 
 
-wt = PoseDsCreator('xxx')
+wt = PoseDsCreator('ImageInfoWeighted_p.json')
 wt.genCOCODs()
 
 # cocoDs = COCODsCreator('。')
