@@ -12,11 +12,11 @@ import FBCNNInference.inference
 import BLIPInference.predict_simple
 from PIL import Image
 import WDVitTaggerV3.inference
-import Aesthetic
+# import Aesthetic
 import RealESRGANInference.inference_realesrgan
 import RealCUGANInference.inference_cugan
 import RTMPoseInference.inference
-import SPAQInference.inference_SPAQ
+#import SPAQInference.inference_SPAQ
 import EATInference.inference
 import BLIP2Inference.inference
 import MiniCPMLlama3V25Inference.inference
@@ -27,6 +27,7 @@ import math
 import OCRInference.inference
 import WatermarkDetectionInference.inference_simple
 import YoloInference.inference
+import DINOv3Inference.inference
 from PIL import ImageDraw
 from pathlib import Path, PurePath
 import numpy as np
@@ -34,10 +35,6 @@ from torch.utils.data import Dataset, DataLoader
 import time
 import shutil
 from torch.multiprocessing import Pool, Process, set_start_method
-try:
-     set_start_method('spawn')
-except RuntimeError:
-    pass
 
 register_heif_opener()
 
@@ -131,26 +128,26 @@ class ImageQuailityTool:
         return set(['Q512', 'H', 'W'])
 
 
-class ImageSPAQTool:
-    def __init__(self, topDir) -> None:
-        self.imageQualityPredictor = SPAQInference.inference_SPAQ.Predictor(
-            weightsDir='./DLToolWeights/SPAQ')
+# class ImageSPAQTool:
+#     def __init__(self, topDir) -> None:
+#         self.imageQualityPredictor = SPAQInference.inference_SPAQ.Predictor(
+#             weightsDir='./DLToolWeights/SPAQ')
 
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-        return imageInfo
+#     def update(self, imageInfo, topDir):
+#         imageInfo.update(self.getUpdateDict(imageInfo, topDir))
+#         return imageInfo
     
-    def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
-        width, height = img.size
-        score_dict = self.imageQualityPredictor.predict(img)
-        score_dict.update({'W': width, 'H': height})
-        return score_dict
+#     def getUpdateDict(self, imageInfo, topDir):
+#         img = hpyerIQAInference.inference.pil_loader(
+#             os.path.join(topDir, imageInfo['IMG']))
+#         width, height = img.size
+#         score_dict = self.imageQualityPredictor.predict(img)
+#         score_dict.update({'W': width, 'H': height})
+#         return score_dict
     
-    @staticmethod
-    def fieldSet():
-        return set(['SPAQ', 'H', 'W'])
+#     @staticmethod
+#     def fieldSet():
+#         return set(['SPAQ', 'H', 'W'])
 
 
 class WatermarkDetectTool:
@@ -284,32 +281,32 @@ class JpegQuailityTool:
         return set(['QF', 'H', 'W'])
 
 
-class ImageAestheticTool:
-    def __init__(self, topDir, device='cuda') -> None:
-        self.imageAestheticPredictor = Aesthetic.Predictor(
-            weightsDir='./DLToolWeights/Aesthetic', device=device)
-        self.transform = self.imageAestheticPredictor.transform
+# class ImageAestheticTool:
+#     def __init__(self, topDir, device='cuda') -> None:
+#         self.imageAestheticPredictor = Aesthetic.Predictor(
+#             weightsDir='./DLToolWeights/Aesthetic', device=device)
+#         self.transform = self.imageAestheticPredictor.transforms
 
-    def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
-        width, height = img.size
-        score_dict = self.imageAestheticPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(score_dict)
-        return imageInfo
+#     def update(self, imageInfo, topDir):
+#         img = hpyerIQAInference.inference.pil_loader(
+#             os.path.join(topDir, imageInfo['IMG']))
+#         width, height = img.size
+#         score_dict = self.imageAestheticPredictor.predict(img)
+#         imageInfo.update({'W': width, 'H': height})
+#         imageInfo.update(score_dict)
+#         return imageInfo
 
-    def update_batch(self, imgs):
-        score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
-        return score_dict_list
+#     def update_batch(self, imgs):
+#         score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
+#         return score_dict_list
 
-    @staticmethod
-    def supportBatchInference():
-        return True
+#     @staticmethod
+#     def supportBatchInference():
+#         return True
 
-    @staticmethod
-    def fieldSet():
-        return set(['A', 'H', 'W'])
+#     @staticmethod
+#     def fieldSet():
+#         return set(['A', 'H', 'W'])
 
 
 class ImageEATAestheticTool:
@@ -339,6 +336,28 @@ class ImageEATAestheticTool:
     def fieldSet():
         return set(['A_EAT', 'H', 'W'])
 
+class ImageEmbeddingTool:
+    def __init__(self, topDir, device='cuda') -> None:
+        self.imageEmbeddingPredictor = DINOv3Inference.inference.Predictor(
+            weightsDir='./DLToolWeights', device=device)
+        self.transform = None
+
+    def update(self, imageInfo, topDir):
+        img = hpyerIQAInference.inference.pil_loader(
+            os.path.join(topDir, imageInfo['IMG']))
+        width, height = img.size
+        embed_dict = self.imageEmbeddingPredictor.predict(img)
+        imageInfo.update({'W': width, 'H': height})
+        imageInfo.update(embed_dict)
+        return imageInfo
+
+    @staticmethod
+    def supportBatchInference():
+        return False
+
+    @staticmethod
+    def fieldSet():
+        return set(['IMG_EMBD', 'H', 'W'])
 
 class ImageSRTool:
     def __init__(self, topDir, device='cuda',srType='Photo') -> None:
