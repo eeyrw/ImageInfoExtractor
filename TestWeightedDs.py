@@ -40,7 +40,7 @@ class WeightedDsTester:
         print('Resample DS')
         rawImagesIdxList = list(range(len(self.imageInfoList)))
         rng = np.random.default_rng()
-        resampleList = rng.choice(rawImagesIdxList,len(self.imageInfoList)*10,replace=True,p=self.imagesWeightList)
+        resampleList = rng.choice(rawImagesIdxList,8888,replace=False,p=self.imagesWeightList)
         self.imagesIdxList = resampleList.tolist()
 
     def genTestResult(self):
@@ -89,5 +89,5 @@ class WeightedDsTester:
             self.genImageJiasaw(preparedImages,256,256,col,row,os.path.join('TestResultSample',f'{i}.webp'))
 
 
-wt = WeightedDsTester('xxxx')
+wt = WeightedDsTester('/home/conti/ds/DiffusionDataset/ImageInfoWeighted_p.json')
 wt.genTestResult()

@@ -30,10 +30,10 @@ class MultiDatasetExtractor:
 
         for entry in os.scandir(path):
             file_path = entry.path
-            if entry.is_file(follow_symlinks=False) and os.path.basename(file_path) == ImageInfoJsonFileName:
+            if entry.is_file(follow_symlinks=True) and os.path.basename(file_path) == ImageInfoJsonFileName:
                 dirsHasImageInfoJson.append(file_path)
                 return dirsHasImageInfoJson, dirsHasNotImageInfoJson
-            elif entry.is_dir(follow_symlinks=False):
+            elif entry.is_dir(follow_symlinks=True):
                 dirsHasImageInfoJson_, dirsHasNotImageInfoJson_ = self.detectImageInfoFolder(
                     file_path)
                 dirsHasImageInfoJson.extend(dirsHasImageInfoJson_)

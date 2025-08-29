@@ -1,0 +1,16 @@
+torch
+torchvision
+pillow_heif
+pyyaml
+tqdm
+transformers
+opencv-python
+einops
+kornia
+timm
+accelerate
+pandas
+scipy
+rtmlib
+easyocr
+ultralytics
