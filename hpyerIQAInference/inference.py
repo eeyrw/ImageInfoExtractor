@@ -198,8 +198,3 @@ class Predictor():
                 '%.3f' % q.detach().cpu().item())} for q in MOSList]
         return scores_list
 
-
-def pil_loader(path):
-    with open(path, 'rb') as f:
-        img = Image.open(f)
-        return img.convert('RGB')

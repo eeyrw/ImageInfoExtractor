@@ -7,27 +7,12 @@ import argparse
 import json
 import os
 import yaml
-import hpyerIQAInference.inference
-import FBCNNInference.inference
-import BLIPInference.predict_simple
 from PIL import Image
-import WDVitTaggerV3.inference
-# import Aesthetic
-import RealESRGANInference.inference_realesrgan
-import RealCUGANInference.inference_cugan
-import RTMPoseInference.inference
-#import SPAQInference.inference_SPAQ
-import EATInference.inference
-import BLIP2Inference.inference
-import MiniCPMLlama3V25Inference.inference
-import SmartCropInference.inference
 from shutil import copyfile, move
-# import open_clip
 import math
 import OCRInference.inference
-import WatermarkDetectionInference.inference_simple
 import YoloInference.inference
-import DINOv3Inference.inference
+
 from PIL import ImageDraw
 from pathlib import Path, PurePath
 import numpy as np
@@ -37,6 +22,12 @@ import shutil
 from torch.multiprocessing import Pool, Process, set_start_method
 
 register_heif_opener()
+
+
+def pil_loader(path):
+    with open(path, 'rb') as f:
+        img = Image.open(f)
+        return img.convert('RGB')
 
 
 class BatchInferenceDataset(Dataset):
@@ -102,6 +93,7 @@ class ImageSizeInfoCorrectTool:
 
 class ImageQuailityTool:
     def __init__(self, topDir,device='cuda') -> None:
+        import hpyerIQAInference.inference
         self.imageQualityPredictor = hpyerIQAInference.inference.Predictor(
             weightsDir='./DLToolWeights/HyperIQA',device=device)
         self.transform = self.imageQualityPredictor.transform
@@ -111,7 +103,7 @@ class ImageQuailityTool:
         return imageInfo
     
     def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
@@ -128,36 +120,15 @@ class ImageQuailityTool:
         return set(['Q512', 'H', 'W'])
 
 
-# class ImageSPAQTool:
-#     def __init__(self, topDir) -> None:
-#         self.imageQualityPredictor = SPAQInference.inference_SPAQ.Predictor(
-#             weightsDir='./DLToolWeights/SPAQ')
-
-#     def update(self, imageInfo, topDir):
-#         imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-#         return imageInfo
-    
-#     def getUpdateDict(self, imageInfo, topDir):
-#         img = hpyerIQAInference.inference.pil_loader(
-#             os.path.join(topDir, imageInfo['IMG']))
-#         width, height = img.size
-#         score_dict = self.imageQualityPredictor.predict(img)
-#         score_dict.update({'W': width, 'H': height})
-#         return score_dict
-    
-#     @staticmethod
-#     def fieldSet():
-#         return set(['SPAQ', 'H', 'W'])
-
-
 class WatermarkDetectTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import WatermarkDetectionInference.inference_simple
         self.watermarkPredictor = WatermarkDetectionInference.inference_simple.Predictor(
             weightsDir="./DLToolWeights/WatermarkDetection", device=device)
         self.transform = self.watermarkPredictor.transform
 
     def update(self, imageInfo, topDir):
-        img = WatermarkDetectionInference.inference_simple.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
 
         watermarkResult = self.watermarkPredictor.predict(img)
@@ -189,6 +160,7 @@ class WatermarkDetectTool:
 
 class SmartCropTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import SmartCropInference.inference
         self.smartCropPredictor =SmartCropInference.inference.Predictor(
             weightsDir="./DLToolWeights/SmartCrop", device=device)
 
@@ -197,7 +169,7 @@ class SmartCropTool:
         return imageInfo
     
     def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         return self.smartCropPredictor.predict(img)
 
@@ -264,11 +236,12 @@ class ImageOCRTool:
 
 class JpegQuailityTool:
     def __init__(self, topDir) -> None:
+        import FBCNNInference.inference
         self.imageQualityPredictor = FBCNNInference.inference.Predictor(
             weightsDir='./DLToolWeights/FBCNN')
 
     def update(self, imageInfo, topDir):
-        img = FBCNNInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
@@ -281,42 +254,15 @@ class JpegQuailityTool:
         return set(['QF', 'H', 'W'])
 
 
-# class ImageAestheticTool:
-#     def __init__(self, topDir, device='cuda') -> None:
-#         self.imageAestheticPredictor = Aesthetic.Predictor(
-#             weightsDir='./DLToolWeights/Aesthetic', device=device)
-#         self.transform = self.imageAestheticPredictor.transforms
-
-#     def update(self, imageInfo, topDir):
-#         img = hpyerIQAInference.inference.pil_loader(
-#             os.path.join(topDir, imageInfo['IMG']))
-#         width, height = img.size
-#         score_dict = self.imageAestheticPredictor.predict(img)
-#         imageInfo.update({'W': width, 'H': height})
-#         imageInfo.update(score_dict)
-#         return imageInfo
-
-#     def update_batch(self, imgs):
-#         score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
-#         return score_dict_list
-
-#     @staticmethod
-#     def supportBatchInference():
-#         return True
-
-#     @staticmethod
-#     def fieldSet():
-#         return set(['A', 'H', 'W'])
-
-
 class ImageEATAestheticTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import EATInference.inference
         self.imageAestheticPredictor = EATInference.inference.Predictor(
             weightsDir='./DLToolWeights/EAT', device=device)
         self.transform = self.imageAestheticPredictor.transform
 
     def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         score_dict = self.imageAestheticPredictor.predict(img)
@@ -338,12 +284,13 @@ class ImageEATAestheticTool:
 
 class ImageEmbeddingTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import DINOv3Inference.inference
         self.imageEmbeddingPredictor = DINOv3Inference.inference.Predictor(
             weightsDir='./DLToolWeights', device=device)
         self.transform = None
 
     def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         embed_dict = self.imageEmbeddingPredictor.predict(img)
@@ -362,14 +309,16 @@ class ImageEmbeddingTool:
 class ImageSRTool:
     def __init__(self, topDir, device='cuda',srType='Photo') -> None:
         if srType=='Photo':
+            import RealESRGANInference.inference_realesrgan
             self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
                 weightsDir='./DLToolWeights/RealESRGAN',device=device)
         elif srType == 'Anime':
+            import RealCUGANInference.inference_cugan
             self.imageSRPredictor = RealCUGANInference.inference_cugan.Predictor(
                 weightsDir='./DLToolWeights',device=device)          
 
     def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         width, height = img.size
         # if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
@@ -409,11 +358,12 @@ class ImageSRTool:
 
 class ImagePoseEstimateTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import RTMPoseInference.inference
         self.imagePoseEstPredictor = RTMPoseInference.inference.Predictor(
             weightsDir='./DLToolWeights',device=device)
 
     def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
 
         preds = self.imagePoseEstPredictor.predict(img)
@@ -435,7 +385,7 @@ class ImagePoseEstimateTool:
         return imageInfo
     
     def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         preds = self.imagePoseEstPredictor.predict(img)
         return preds
@@ -455,7 +405,7 @@ class ImageObjectDetectTool:
         return imageInfo
     
     def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         preds = self.imageObjectDetectPredictor.predict(img)
         return preds
@@ -475,50 +425,10 @@ class ImageObjectDetectTool:
     def fieldSet():
         return set(['OBJS'])
 
-# class ImageFilterTool:
-#     def __init__(self, topDir) -> None:
-#         self.model, _, self.preprocess = open_clip.create_model_and_transforms('ViT-H-14', pretrained='laion2b_s32b_b79k',
-#                                                                                cache_dir='./DLToolWeights/OpenCLIP')
-#         self.tokenizer = open_clip.get_tokenizer(
-#             'ViT-H-14')
-#         self.model.to('cuda')
-
-#     def update(self, imageInfo, topDir):
-#         img = hpyerIQAInference.inference.pil_loader(
-#             os.path.join(topDir, imageInfo['IMG']))
-
-#         img = self.preprocess(img).unsqueeze(0).to('cuda')
-#         text = self.tokenizer(
-#             ["draft sketch", "finshed work"]).to('cuda')
-
-#         import torch
-#         with torch.no_grad(), torch.cuda.amp.autocast():
-#             image_features = self.model.encode_image(img)
-#             text_features = self.model.encode_text(text)
-#             image_features /= image_features.norm(dim=-1, keepdim=True)
-#             text_features /= text_features.norm(dim=-1, keepdim=True)
-#             text_probs = (100.0 * image_features @
-#                           text_features.T).softmax(dim=-1)[0]
-#             idx = torch.argmax(text_probs)
-#             if idx == 0:
-#                 bakDir = os.path.join(topDir, 'raw_before_filter',
-#                                       os.path.dirname(imageInfo['IMG']))
-#                 rawImagePath = os.path.join(topDir, imageInfo['IMG'])
-#                 print('Filter out:%s' % rawImagePath)
-#                 bakImagePath = os.path.join(
-#                     bakDir, os.path.basename(imageInfo['IMG']))
-#                 if not os.path.exists(bakDir):
-#                     os.makedirs(bakDir)
-#                 move(rawImagePath, bakImagePath)
-#             return imageInfo
-
-#     @staticmethod
-#     def fieldSet():
-#         return set([])
-
 
 class DeepDanbooruTagTool:
     def __init__(self, topDir, device='cuda') -> None:
+        import WDVitTaggerV3.inference
         self.imageCaptionPredictor = WDVitTaggerV3.inference.Predictor(
             weightsDir='./DLToolWeights', device=device)
         self.transform = self.imageCaptionPredictor.transform
@@ -545,6 +455,7 @@ class DeepDanbooruTagTool:
 class ImageHQCaptionTool:
     def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
         if captionModel == 'MiniCPMLlama3V25':
+            import MiniCPMLlama3V25Inference.inference
             self.imageCaptionPredictor = MiniCPMLlama3V25Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
 
@@ -553,7 +464,7 @@ class ImageHQCaptionTool:
         return imageInfo
 
     def getUpdateDict(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         captionDictList = self.imageCaptionPredictor.predict(img)
         return {'HQ_CAP': [captionDict['caption']
@@ -589,15 +500,17 @@ class ImageCaptionTool:
         else:
             customCaptionPool = None
         if captionModel == 'BLIP':
+            import BLIPInference.predict_simple
             self.imageCaptionPredictor = BLIPInference.predict_simple.Predictor(
                 customCaptionPool=customCaptionPool, weightsDir='./DLToolWeights/BLIP', device=device)
             self.transform = self.imageCaptionPredictor.transform
         elif captionModel == 'BLIP2':
+            import BLIP2Inference.inference
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
 
     def update(self, imageInfo, topDir):
-        img = hpyerIQAInference.inference.pil_loader(
+        img = pil_loader(
             os.path.join(topDir, imageInfo['IMG']))
         captionDictList = self.imageCaptionPredictor.predict(img)
         imageInfo.update({'CAP': [captionDict['caption']
