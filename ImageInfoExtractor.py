@@ -879,7 +879,7 @@ class ImageInfoManager:
                 buffer = UpdateBuffer(
                     df=self.imageInfoDF,
                     batch_update_func=self.batch_update,
-                    buffer_threshold=1000,
+                    buffer_threshold=10000,
                     save_func=saveFunc,
                     save_interval=self.saveInterval
                 )
