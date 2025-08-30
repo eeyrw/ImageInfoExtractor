@@ -30,6 +30,7 @@ def pil_loader(path):
         img = Image.open(f)
         return img.convert('RGB')
 
+
 CURRENT_SCHEMA = {'IMG': pl.String, 'W': pl.Int32, 'H': pl.Int32,
                   'Q512': pl.Float32,
                   'CAP': pl.List(pl.String),
@@ -40,7 +41,8 @@ CURRENT_SCHEMA = {'IMG': pl.String, 'W': pl.Int32, 'H': pl.Int32,
                   'DBRU_TAG': pl.String,
                   'POSE_KPTS': pl.List(pl.Struct({'BBOX': pl.List(pl.Float32), 'INVLD_KPTS_IDX': pl.List(pl.Int32), 'KPTS_X': pl.List(pl.Float32), 'KPTS_Y': pl.List(pl.Float32)})),
                   'HAS_WATERMARK': pl.Float32,
-                  'IMG_EMBD':pl.List(pl.Float32)}
+                  'IMG_EMBD': pl.List(pl.Float32)}
+
 
 class BatchInferenceDataset(Dataset):
     def __init__(self, topDir, imageInfoDF, indexList: pl.Series, transform):
@@ -530,9 +532,6 @@ class ImageCaptionTool:
         return set(['CAP'])
 
 
-
-
-
 class ImageInfoManager:
     def __init__(self, topDir,
                  imageInfoFileName='ImageInfo.json',
@@ -554,19 +553,14 @@ class ImageInfoManager:
             self.imageInfoDF = pl.DataFrame([])
         else:
             ext = os.path.splitext(self.imageInfoFilePath)[1].lower()
-            try:
-                if ext == ".json":
-                    self.imageInfoDF = pl.read_json(self.imageInfoFilePath,schema=CURRENT_SCHEMA)
-                elif ext == ".parquet":
-                    self.imageInfoDF = pl.read_parquet(self.imageInfoFilePath)
-                else:
-                    print(
-                        f"Unsupported file type {ext}. Creating empty DataFrame.")
-                    self.imageInfoDF = pl.DataFrame([])
-            except Exception as e:
-                raise e
+            if ext == ".json":
+                self.imageInfoDF = pl.read_json(
+                    self.imageInfoFilePath, schema=CURRENT_SCHEMA)
+            elif ext == ".parquet":
+                self.imageInfoDF = pl.read_parquet(self.imageInfoFilePath)
+            else:
                 print(
-                    f"Failed to read file with Polars: {e}. Creating empty DataFrame.")
+                    f"Unsupported file type {ext}. Creating empty DataFrame.")
                 self.imageInfoDF = pl.DataFrame([])
 
     def isInFilterDir(self, dir, filteredDirList):
@@ -673,6 +667,18 @@ class ImageInfoManager:
                       (imageInfoList[imageInfoIdx], str(e)))
         return updateDictIdxList
 
+    def smartPrint(self, items, desc, maxShowNum=10):
+        itemNum = len(items)
+        if itemNum > 0:
+            displayCounter = maxShowNum
+            for item in items:
+                if displayCounter > 0:
+                    displayCounter = displayCounter - 1
+                    print(f'{desc}:{item}')
+                elif displayCounter == 0:
+                    print(f'{desc}: {itemNum} items to be displayed. Too much to show...')
+                    break
+
     def batch_update(self, df: pl.DataFrame, idx_series: pl.Series, updates_list: list[dict]) -> pl.DataFrame:
         """
         向量化批量更新 DataFrame。
@@ -686,7 +692,8 @@ class ImageInfoManager:
         idx_series = pl.Series(idx_series)
 
         # 临时 DataFrame 保存更新值
-        updates_df = pl.DataFrame(updates_list,schema_overrides=CURRENT_SCHEMA)
+        updates_df = pl.DataFrame(
+            updates_list, schema_overrides=CURRENT_SCHEMA)
 
         # 哪些列会从 updates_df 来
         upd_cols = set(updates_df.columns)
@@ -869,7 +876,7 @@ class ImageInfoManager:
 
         if 'IMG' not in self.imageInfoDF.columns or self.imageInfoDF.is_empty():
             self.imageInfoDF = actualDF.with_row_index(name="IDX")
-            new_list = actualList[:10]
+            new_list = actualList
         else:
             # 2️⃣ 找出删除的图片
             deletedDF = self.imageInfoDF.filter(
@@ -897,11 +904,9 @@ class ImageInfoManager:
 
             self.imageInfoDF = self.imageInfoDF.with_row_index(name="IDX")
 
-        # 7️⃣ 打印新增和删除图片信息（总数 + 前 10 条）
-        print(f"新增图片: {len(new_list)}")
-        print(new_list[:10] if new_list else [])
-        print(f"删除图片: {len(deleted_list)}")
-        print(deleted_list[:10] if deleted_list else [])
+        # 7️⃣ 打印新增和删除图片信息
+        self.smartPrint(new_list,'Add')
+        self.smartPrint(deleted_list,'Del')
 
 
 if __name__ == '__main__':
