@@ -1,5 +1,6 @@
 import itertools
 import sys
+from typing import Iterable
 from pillow_heif import register_heif_opener
 from tqdm import tqdm
 import pathlib
@@ -532,6 +533,103 @@ class ImageCaptionTool:
         return set(['CAP'])
 
 
+import time
+
+class UpdateBuffer:
+    def __init__(self, df, batch_update_func, buffer_threshold=1000, save_func=None, save_interval=None):
+        """
+        批量更新缓冲器
+
+        用途：
+            - 避免频繁对 DataFrame 逐条更新，提升性能
+            - 支持数量阈值 + 时间阈值 两种策略自动 flush
+            - 可以在任务完成时强制 flush，保证结果不会丢失
+
+        参数:
+            df : object
+                需要更新的 DataFrame 引用（比如 self.imageInfoDF）
+            batch_update_func : callable
+                用于批量更新 DataFrame 的函数，格式:
+                (df, indices, updates) -> df
+            buffer_threshold : int, 默认 1000
+                缓冲区容量阈值，超过时会触发一次 flush
+            save_func : callable, 可选
+                每次 flush 后调用的保存函数，例如 self.saveImageInfoList
+            save_interval : float, 可选
+                时间阈值（秒），超过该时间即使 buffer 未满也会触发 flush
+        """
+        self.df = df
+        self.batch_update = batch_update_func
+        self.buffer_threshold = buffer_threshold
+        self.save_func = save_func
+        self.save_interval = save_interval
+        self.buffer = []                   # 存放 (index, update_dict) 的列表
+        self.last_flush_time = time.time() # 上一次 flush 的时间戳
+
+    def add(self, indices, updates):
+        """
+        向缓冲区添加一条或多条更新记录。
+        - 如果超过数量阈值，自动 flush
+        - 如果超过时间阈值，自动 flush
+
+        参数:
+            indices : int | list[int] | tuple[int]
+                要更新的 DataFrame 行索引（可以是单个或批量）
+            updates : dict | list[dict]
+                对应索引的更新内容（单条或批量）
+        """
+        # 兼容单条和批量情况
+        if isinstance(indices, Iterable):
+            self.buffer.extend(zip(indices, updates))
+        else:
+            self.buffer.append((indices, updates))
+
+        # 判断是否需要触发 flush
+        now = time.time()
+        need_flush = (
+            len(self.buffer) >= self.buffer_threshold or   # 数量条件
+            (self.save_interval and now - self.last_flush_time >= self.save_interval) # 时间条件
+        )
+        if need_flush:
+            self.flush()
+
+    def flush(self, force=False):
+        """
+        将缓冲区的更新应用到 DataFrame 并清空缓冲区。
+
+        参数:
+            force : bool, 默认 False
+                是否强制写回。即使 buffer 不满、时间没到，也会立刻 flush。
+
+        逻辑:
+            - 如果 buffer 为空，直接返回
+            - 调用 batch_update_func 批量更新 DF
+            - 清空 buffer
+            - 更新时间戳
+            - 如果提供了 save_func，调用保存
+        """
+        if not self.buffer and not force:
+            return
+
+        if self.buffer:
+            indices, updates = zip(*self.buffer)
+            self.df = self.batch_update(self.df, indices, updates)
+            self.buffer.clear()
+
+        self.last_flush_time = time.time()
+
+        # 如果有保存函数，每次 flush 后调用一次
+        if self.save_func:
+            self.save_func(self)
+
+    def get_df(self):
+        """
+        返回当前最新的 DataFrame。
+        注意：在使用前最好先手动 flush(force=True)，确保缓存写回。
+        """
+        return self.df
+    
+
 class ImageInfoManager:
     def __init__(self, topDir,
                  imageInfoFileName='ImageInfo.json',
@@ -773,6 +871,19 @@ class ImageInfoManager:
 
             if len(processDict['itemIdx']) > 0:
                 print('Tool: %s' % processTool.__name__)
+
+                def saveFunc(bufferObj):
+                    self.imageInfoDF = bufferObj.get_df()
+                    self.saveImageInfoList()
+
+                buffer = UpdateBuffer(
+                    df=self.imageInfoDF,
+                    batch_update_func=self.batch_update,
+                    buffer_threshold=1000,
+                    save_func=saveFunc,
+                    save_interval=self.saveInterval
+                )
+
                 if not processDict['multiGPUs']:
                     toolInstance = processTool(
                         self.topDir, **processDict['args'])
@@ -791,40 +902,25 @@ class ImageInfoManager:
                                            collate_fn=custom_collate,
                                            drop_last=False)
                         with tqdm(total=len(ds)) as pbar:
-                            lastTs = time.time()
                             for indices, imgs in dtldr:
                                 updateDictList = toolInstance.update_batch(
                                     imgs)
-                                self.imageInfoDF = self.batch_update(
-                                    self.imageInfoDF, indices, updateDictList)
-
+                                buffer.add(indices, updateDictList)
                                 pbar.update(len(indices))
                                 toolUpdateCount = toolUpdateCount+len(indices)
-                                nowTs = time.time()
-                                if nowTs-lastTs >= self.saveInterval:
-                                    lastTs = nowTs
-                                    self.saveImageInfoList()
                     else:
-                        lastTs = time.time()
                         for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                             try:
                                 updateResult = toolInstance.getUpdateDict(
                                     self.imageInfoDF, imageInfoIdx, self.topDir)
-                                self.imageInfoDF = self.batch_update(
-                                    self.imageInfoDF, (i,), (updateResult,))
+                                buffer.add(i, updateResult)
                                 if updateResult is not None:
                                     toolUpdateCount = toolUpdateCount+1
                             except Exception as e:
                                 raise e
                                 print('ERROR:%s:%s' %
                                       (self.imageInfoList[imageInfoIdx], str(e)))
-                            nowTs = time.time()
-                            if nowTs-lastTs >= self.saveInterval:
-                                lastTs = nowTs
-                                if toolUpdateCount > 0:
-                                    self.saveImageInfoList()
                 else:
-                    lastTs = time.time()
                     tasks = processDict['itemIdx']
                     woker = processDict['multiGPUs']
                     wokerNum = len(woker)
@@ -847,19 +943,14 @@ class ImageInfoManager:
                     with Pool(wokerNum) as p:
                         for updateDictIdxList in tqdm(p.imap(self.processFunc, subLists), total=len(subLists)):
                             for imageInfoIdx, updateDict in updateDictIdxList:
-                                self.imageInfoList[imageInfoIdx].update(
-                                    updateDict)
+                                buffer.add(imageInfoIdx,updateDict)
                             toolUpdateCount = toolUpdateCount + \
                                 len(updateDictIdxList)
-                            nowTs = time.time()
-                            if nowTs-lastTs >= self.saveInterval:
-                                lastTs = nowTs
-                                self.saveImageInfoList()
                 if toolUpdateCount == 0:
                     print(
                         f'No update in {self.topDir} by tool {processTool.__name__}.')
                 else:
-                    self.saveImageInfoList()
+                    buffer.flush(force=True)
             else:
                 print('No update by %s' % processTool.__name__)
                 continue
