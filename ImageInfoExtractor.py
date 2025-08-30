@@ -12,6 +12,7 @@ from shutil import copyfile, move
 import math
 import OCRInference.inference
 import YoloInference.inference
+import polars as pl
 
 from PIL import ImageDraw
 from pathlib import Path, PurePath
@@ -29,11 +30,22 @@ def pil_loader(path):
         img = Image.open(f)
         return img.convert('RGB')
 
+CURRENT_SCHEMA = {'IMG': pl.String, 'W': pl.Int32, 'H': pl.Int32,
+                  'Q512': pl.Float32,
+                  'CAP': pl.List(pl.String),
+                  'A': pl.Float32,
+                  'A_EAT': pl.Float32,
+                  'HQ_CAP': pl.List(pl.String),
+                  'A_CENTER': pl.List(pl.Float32),
+                  'DBRU_TAG': pl.String,
+                  'POSE_KPTS': pl.List(pl.Struct({'BBOX': pl.List(pl.Float32), 'INVLD_KPTS_IDX': pl.List(pl.Int32), 'KPTS_X': pl.List(pl.Float32), 'KPTS_Y': pl.List(pl.Float32)})),
+                  'HAS_WATERMARK': pl.Float32,
+                  'IMG_EMBD':pl.List(pl.Float32)}
 
 class BatchInferenceDataset(Dataset):
-    def __init__(self, topDir, imageInfoList, indexList, transform):
+    def __init__(self, topDir, imageInfoDF, indexList: pl.Series, transform):
         self.transform = transform
-        self.imageInfoList = imageInfoList
+        self.imageInfoDF = imageInfoDF
         self.indexList = indexList
         self.topDir = topDir
 
@@ -43,7 +55,7 @@ class BatchInferenceDataset(Dataset):
     def __getitem__(self, item):
         idx = self.indexList[item]
         image_path = os.path.join(self.topDir,
-                                  self.imageInfoList[idx]['IMG'])
+                                  self.imageInfoDF['IMG'][idx])
         image = Image.open(image_path).convert('RGB')
         if self.transform:
             x = self.transform(image)
@@ -52,38 +64,22 @@ class BatchInferenceDataset(Dataset):
         return idx, x
 
 
-class AdditionalMetaInfo:
-    def __init__(self, topDir) -> None:
-        with open(os.path.join(topDir, 'MetaInfo.json'), 'r') as f:
-            self.metaInfo = json.load(f)
-
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.metaInfo)
-        return imageInfo
-
-    @staticmethod
-    def fieldSet():
-        return set([])
-
-
 class ImageSizeInfoCorrectTool:
     def __init__(self, topDir) -> None:
         pass
 
-    def update(self, imageInfo, topDir):
-        with open(os.path.join(topDir, imageInfo['IMG']), 'rb') as f:
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
+        with open(os.path.join(topDir, imageInfoDF['IMG'][idx]), 'rb') as f:
             img = Image.open(f)
         width, height = img.size
         ret = None
-        if 'W' in imageInfo.keys() and 'H' in imageInfo.keys():
-            if width != imageInfo['W'] or height != imageInfo['H']:
-                print('Correct size: %s' % imageInfo['IMG'])
-                imageInfo.update({'W': width, 'H': height})
-                ret = imageInfo
+        if 'W' in imageInfoDF.columns and 'H' in imageInfoDF.columns:
+            if width != imageInfoDF['W'][idx] or height != imageInfoDF['H'][idx]:
+                print('Correct size: %s' % imageInfoDF['IMG'][idx])
+                ret = {'W': width, 'H': height}
         else:
-            print('Create size: %s' % imageInfo['IMG'])
-            imageInfo.update({'W': width, 'H': height})
-            ret = imageInfo
+            print('Create size: %s' % imageInfoDF['IMG'][idx])
+            ret = {'W': width, 'H': height}
         return ret
 
     @staticmethod
@@ -92,19 +88,15 @@ class ImageSizeInfoCorrectTool:
 
 
 class ImageQuailityTool:
-    def __init__(self, topDir,device='cuda') -> None:
+    def __init__(self, topDir, device='cuda') -> None:
         import hpyerIQAInference.inference
         self.imageQualityPredictor = hpyerIQAInference.inference.Predictor(
-            weightsDir='./DLToolWeights/HyperIQA',device=device)
+            weightsDir='./DLToolWeights/HyperIQA', device=device)
         self.transform = self.imageQualityPredictor.transform
 
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-        return imageInfo
-    
-    def getUpdateDict(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx,  topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
         score_dict.update({'W': width, 'H': height})
@@ -112,9 +104,11 @@ class ImageQuailityTool:
 
     def update_batch(self, imgs):
         return self.imageQualityPredictor.predict_batch(imgs)
+
     @staticmethod
     def supportBatchInference():
         return True
+
     @staticmethod
     def fieldSet():
         return set(['Q512', 'H', 'W'])
@@ -127,23 +121,10 @@ class WatermarkDetectTool:
             weightsDir="./DLToolWeights/WatermarkDetection", device=device)
         self.transform = self.watermarkPredictor.transform
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
-
-        watermarkResult = self.watermarkPredictor.predict(img)
-
-        # bakDir = os.path.join(topDir, 'watermark_result',
-        #                       os.path.dirname(imageInfo['IMG']))
-        # bakImagePath = os.path.join(
-        #     bakDir, os.path.basename(imageInfo['IMG']))
-        # if not os.path.exists(bakDir):
-        #     os.makedirs(bakDir)
-        # if watermarkResult['HAS_WATERMARK']>0.7:
-        #     img.save(bakImagePath)
-
-        imageInfo.update(watermarkResult)
-        return imageInfo
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
+        return self.watermarkPredictor.predict(img)
 
     def update_batch(self, imgs):
         watermarkResults = self.watermarkPredictor.predict_batch(imgs)
@@ -161,16 +142,12 @@ class WatermarkDetectTool:
 class SmartCropTool:
     def __init__(self, topDir, device='cuda') -> None:
         import SmartCropInference.inference
-        self.smartCropPredictor =SmartCropInference.inference.Predictor(
+        self.smartCropPredictor = SmartCropInference.inference.Predictor(
             weightsDir="./DLToolWeights/SmartCrop", device=device)
 
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-        return imageInfo
-    
-    def getUpdateDict(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         return self.smartCropPredictor.predict(img)
 
     @staticmethod
@@ -183,16 +160,16 @@ class SmartCropTool:
 
 
 class ImageOCRTool:
-    def __init__(self, topDir, device='cuda',debugOutput=False) -> None:
+    def __init__(self, topDir, device='cuda', debugOutput=False) -> None:
         self.imageOCRPredictor = OCRInference.inference.Predictor(
-            weightsDir="./DLToolWeights/EasyOCR",device=device)
+            weightsDir="./DLToolWeights/EasyOCR", device=device)
         self.debugOutput = debugOutput
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = OCRInference.inference.pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
-        if width*height>1024*1024:
+        if width*height > 1024*1024:
             resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
             resizedImg = img.resize(
                 tuple(math.ceil(x * resize_ratio) for x in img.size),
@@ -206,17 +183,16 @@ class ImageOCRTool:
 
         if self.debugOutput:
             bakDir = os.path.join(topDir, 'ocr_result',
-                                os.path.dirname(imageInfo['IMG']))
+                                  os.path.dirname(imageInfoDF['IMG'][idx]))
             bakImagePath = os.path.join(
-                bakDir, os.path.basename(imageInfo['IMG']))
+                bakDir, os.path.basename(imageInfoDF['IMG'][idx]))
             if not os.path.exists(bakDir):
                 os.makedirs(bakDir)
             if len(bounds) > 0:
                 self.draw_boxes(resizedImg, bounds)
                 resizedImg.save(bakImagePath)
 
-        imageInfo.update({'W': width, 'H': height, 'TXT':bounds})
-        return imageInfo
+        return {'W': width, 'H': height, 'TXT': bounds}
 
     def draw_boxes(self, image, bounds, color='yellow', width=6):
         draw = ImageDraw.Draw(image)
@@ -224,14 +200,14 @@ class ImageOCRTool:
             p0, p1, p2, p3 = bound[0]
             draw.line([*p0, *p1, *p2, *p3, *p0], fill=color, width=width)
         return image
-    
+
     @staticmethod
     def supportBatchInference():
         return False
-    
+
     @staticmethod
     def fieldSet():
-        return set(['TXT','H', 'W'])
+        return set(['TXT', 'H', 'W'])
 
 
 class JpegQuailityTool:
@@ -240,14 +216,13 @@ class JpegQuailityTool:
         self.imageQualityPredictor = FBCNNInference.inference.Predictor(
             weightsDir='./DLToolWeights/FBCNN')
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
         score_dict = self.imageQualityPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(score_dict)
-        return imageInfo
+        score_dict.update({'W': width, 'H': height})
+        return score_dict
 
     @staticmethod
     def fieldSet():
@@ -261,14 +236,13 @@ class ImageEATAestheticTool:
             weightsDir='./DLToolWeights/EAT', device=device)
         self.transform = self.imageAestheticPredictor.transform
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
         score_dict = self.imageAestheticPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(score_dict)
-        return imageInfo
+        score_dict.update({'W': width, 'H': height})
+        return score_dict
 
     def update_batch(self, imgs):
         score_dict_list = self.imageAestheticPredictor.predict_batch(imgs)
@@ -282,6 +256,7 @@ class ImageEATAestheticTool:
     def fieldSet():
         return set(['A_EAT', 'H', 'W'])
 
+
 class ImageEmbeddingTool:
     def __init__(self, topDir, device='cuda') -> None:
         import DINOv3Inference.inference
@@ -289,14 +264,14 @@ class ImageEmbeddingTool:
             weightsDir='./DLToolWeights', device=device)
         self.transform = None
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
         embed_dict = self.imageEmbeddingPredictor.predict(img)
-        imageInfo.update({'W': width, 'H': height})
-        imageInfo.update(embed_dict)
-        return imageInfo
+        embed_dict.update({'W': width, 'H': height})
+
+        return embed_dict
 
     @staticmethod
     def supportBatchInference():
@@ -306,20 +281,21 @@ class ImageEmbeddingTool:
     def fieldSet():
         return set(['IMG_EMBD', 'H', 'W'])
 
+
 class ImageSRTool:
-    def __init__(self, topDir, device='cuda',srType='Photo') -> None:
-        if srType=='Photo':
+    def __init__(self, topDir, device='cuda', srType='Photo') -> None:
+        if srType == 'Photo':
             import RealESRGANInference.inference_realesrgan
             self.imageSRPredictor = RealESRGANInference.inference_realesrgan.Predictor(
-                weightsDir='./DLToolWeights/RealESRGAN',device=device)
+                weightsDir='./DLToolWeights/RealESRGAN', device=device)
         elif srType == 'Anime':
             import RealCUGANInference.inference_cugan
             self.imageSRPredictor = RealCUGANInference.inference_cugan.Predictor(
-                weightsDir='./DLToolWeights',device=device)          
+                weightsDir='./DLToolWeights', device=device)
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         width, height = img.size
         # if width*height < 768*768 and width*height > 384*384 and imageInfo['Q512'] > 60:
         # if width*height >1024*1024:
@@ -332,10 +308,10 @@ class ImageSRTool:
 
         srImg = self.imageSRPredictor.predict(img)
         bakDir = os.path.join(topDir, 'raw_before_sr',
-                              os.path.dirname(imageInfo['IMG']))
-        rawImagePath = os.path.join(topDir, imageInfo['IMG'])
+                              os.path.dirname(imageInfoDF['IMG'][idx]))
+        rawImagePath = os.path.join(topDir, imageInfoDF['IMG'][idx])
         bakImagePath = os.path.join(
-            bakDir, os.path.basename(imageInfo['IMG']))
+            bakDir, os.path.basename(imageInfoDF['IMG'][idx]))
         if not os.path.exists(bakDir):
             os.makedirs(bakDir)
         copyfile(rawImagePath, bakImagePath)
@@ -343,84 +319,64 @@ class ImageSRTool:
         srImg.save(savedPath)
         width, height = srImg.size
 
-        imageInfo.update({'W': width, 'H': height})
-        return imageInfo
+        return {'W': width, 'H': height}
 
     @staticmethod
     def fieldSet():
         return set(['H', 'W'])
 
     @staticmethod
-    def updateCriteria(imageInfo):
-        imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea < 896*896 and imageArea > 384*384 and imageInfo['Q512'] > 60
+    def updateFilter(imageInfoDF):
+        mask = (
+            (pl.col("W") * pl.col("H") < 896*896)
+            & (pl.col("W") * pl.col("H") > 384 * 384)
+            & (pl.col("Q512") > 60)
+        )
+        return imageInfoDF.filter(mask).get_column("IDX")
 
 
 class ImagePoseEstimateTool:
     def __init__(self, topDir, device='cuda') -> None:
         import RTMPoseInference.inference
         self.imagePoseEstPredictor = RTMPoseInference.inference.Predictor(
-            weightsDir='./DLToolWeights',device=device)
+            weightsDir='./DLToolWeights', device=device)
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
-
-        preds = self.imagePoseEstPredictor.predict(img)
-        # width, height = poseResult.size
-        # if width*height >1024*1024:
-        #     resize_ratio = math.sqrt(1024*1024/(img.size[0]*img.size[1]))
-        #     poseResult = poseResult.resize(
-        #                 tuple(math.ceil(x * resize_ratio) for x in img.size),
-        #                 Image.BICUBIC
-        #             )
-        # bakDir = os.path.join(topDir, 'pose_est_result',
-        #                       os.path.dirname(imageInfo['IMG']))
-        # bakImagePath = os.path.join(
-        #     bakDir, os.path.basename(imageInfo['IMG']))
-        # if not os.path.exists(bakDir):
-        #     os.makedirs(bakDir)
-        # poseResult.save(bakImagePath)
-        imageInfo.update(preds)
-        return imageInfo
-    
-    def getUpdateDict(self, imageInfo, topDir):
-        img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         preds = self.imagePoseEstPredictor.predict(img)
         return preds
-    
+
     @staticmethod
     def fieldSet():
         return set(['POSE_KPTS'])
 
 
 class ImageObjectDetectTool:
-    def __init__(self, topDir, device='cuda',name=None) -> None:
+    def __init__(self, topDir, device='cuda', name=None) -> None:
         self.imageObjectDetectPredictor = YoloInference.inference.Predictor(
-            weightsDir='./DLToolWeights',weightName=name,device=device)
+            weightsDir='./DLToolWeights', weightName=name, device=device)
         self.transform = self.imageObjectDetectPredictor.transform
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-        return imageInfo
-    
-    def getUpdateDict(self, imageInfo, topDir):
+
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         preds = self.imageObjectDetectPredictor.predict(img)
         return preds
-    
+
     def update_batch(self, imgs):
         return self.imageObjectDetectPredictor.predict_batch(imgs)
+
     @staticmethod
     def supportBatchInference():
         return True
 
     @staticmethod
     def custom_collate(original_batch):
-        trans = list(map(list, itertools.zip_longest(*original_batch, fillvalue=None)))
+        trans = list(map(list, itertools.zip_longest(
+            *original_batch, fillvalue=None)))
         return trans
-    
+
     @staticmethod
     def fieldSet():
         return set(['OBJS'])
@@ -440,18 +396,36 @@ class DeepDanbooruTagTool:
     @staticmethod
     def supportBatchInference():
         return True
-    
+
     @staticmethod
-    def updateCriteria(imageInfo):
-        imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
-            ('DBRU_TAG' not in imageInfo.keys() or 'DBRU_TAG' in imageInfo.keys()
-             and len(imageInfo['DBRU_TAG']) == 0)
+    def updateFilter(imageInfoDF):
+        """
+        返回符合条件的索引 (pl.Series)，索引列为 'IDX'
+        条件:
+        - 面积 > 384*384
+        - Q512 > 35
+        - DBRU_TAG 列不存在 或 为空
+        """
+        # 如果没有 DBRU_TAG 列，则先加一列默认 None
+        if "DBRU_TAG" not in imageInfoDF.columns:
+            df = imageInfoDF.with_columns(pl.lit(None).alias("DBRU_TAG"))
+        else:
+            df = imageInfoDF
+
+        mask = (
+            (pl.col("W") * pl.col("H") > 384 * 384)
+            & (pl.col("Q512") > 35)
+            & (pl.col("DBRU_TAG").is_null())
+        )
+
+        # 返回 pl.Series (索引列)
+        return df.filter(mask).get_column("IDX")
 
     @staticmethod
     def fieldSet():
         return set(['DBRU_TAG'])
-    
+
+
 class ImageHQCaptionTool:
     def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
         if captionModel == 'MiniCPMLlama3V25':
@@ -459,26 +433,29 @@ class ImageHQCaptionTool:
             self.imageCaptionPredictor = MiniCPMLlama3V25Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
 
-    def update(self, imageInfo, topDir):
-        imageInfo.update(self.getUpdateDict(imageInfo, topDir))
-        return imageInfo
-
-    def getUpdateDict(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         captionDictList = self.imageCaptionPredictor.predict(img)
         return {'HQ_CAP': [captionDict['caption']
-                                  for captionDict in captionDictList]}
+                           for captionDict in captionDictList]}
 
     def update_batch(self, imgs):
         raise NotImplementedError
 
     @staticmethod
-    def updateCriteria(imageInfo):
-        imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
-            ('HQ_CAP' not in imageInfo.keys() or 'HQ_CAP' in imageInfo.keys()
-             and len(imageInfo['HQ_CAP']) == 0)
+    def updateFilter(imageInfoDF):
+        if "HQ_CAP" not in imageInfoDF.columns:
+            df = imageInfoDF.with_columns(pl.lit(None).alias("HQ_CAP"))
+        else:
+            df = imageInfoDF
+
+        mask = (
+            (pl.col("W") * pl.col("H") > 384 * 384)
+            & (pl.col("Q512") > 35)
+            & (pl.col("HQ_CAP").is_null())
+        )
+        return df.filter(mask).get_column("IDX")
 
     @staticmethod
     def supportBatchInference():
@@ -487,6 +464,7 @@ class ImageHQCaptionTool:
     @staticmethod
     def fieldSet():
         return set(['HQ_CAP'])
+
 
 class ImageCaptionTool:
     def __init__(self, topDir, captionModel='LLAVA', device='cuda') -> None:
@@ -509,32 +487,39 @@ class ImageCaptionTool:
             self.imageCaptionPredictor = BLIP2Inference.inference.Predictor(
                 weightsDir='./DLToolWeights', device=device)
 
-    def update(self, imageInfo, topDir):
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
         img = pil_loader(
-            os.path.join(topDir, imageInfo['IMG']))
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
         captionDictList = self.imageCaptionPredictor.predict(img)
-        imageInfo.update({'CAP': [captionDict['caption']
-                                  for captionDict in captionDictList]})
+        updateDict = {'CAP': [captionDict['caption']
+                              for captionDict in captionDictList]}
         havePrintFileName = False
         for captionDict in captionDictList:
             if captionDict['isCustomCap']:
                 if not havePrintFileName:
-                    print('File:'+imageInfo['IMG'])
+                    print('File:'+imageInfoDF['IMG'][idx])
                     havePrintFileName = True
                 print('Custom cap: rank %s cap %s' %
                       (captionDict['rank'], captionDict['caption']))
-        return imageInfo
+        return updateDict
 
     def update_batch(self, imgs):
         captionDictListList = self.imageCaptionPredictor.predict_batch(imgs)
         return captionDictListList
 
     @staticmethod
-    def updateCriteria(imageInfo):
-        imageArea = imageInfo['W']*imageInfo['H']
-        return imageArea > 384*384 and imageInfo['Q512'] > 35 and \
-            ('CAP' not in imageInfo.keys() or 'CAP' in imageInfo.keys()
-             and len(imageInfo['CAP']) == 0)
+    def updateFilter(imageInfoDF):
+        if "CAP" not in imageInfoDF.columns:
+            df = imageInfoDF.with_columns(pl.lit(None).alias("CAP"))
+        else:
+            df = imageInfoDF
+
+        mask = (
+            (pl.col("W") * pl.col("H") > 384 * 384)
+            & (pl.col("Q512") > 35)
+            & (pl.col("CAP").is_null())
+        )
+        return df.filter(mask).get_column("IDX")
 
     @staticmethod
     def supportBatchInference():
@@ -545,27 +530,46 @@ class ImageCaptionTool:
         return set(['CAP'])
 
 
+
+
+
 class ImageInfoManager:
-    def __init__(self, topDir, imageInfoFileName='ImageInfo.json', 
-                 processTools=[], toolConfigYAML=None,topTopDir=None,debugWithoutSave=False,
+    def __init__(self, topDir,
+                 imageInfoFileName='ImageInfo.json',
+                 processTools=[], toolConfigYAML=None, topTopDir=None, debugWithoutSave=False,
                  saveInterval=3600) -> None:
         self.topDir = topDir
         self.topTopDir = topTopDir
-        self.debugWithoutSave =  debugWithoutSave
+        self.debugWithoutSave = debugWithoutSave
         self.processTools = processTools
         self.toolConfigYAML = toolConfigYAML
         self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
         self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
         self.saveInterval = saveInterval
-        if os.path.isfile(self.imageInfoFilePath):
-            with open(self.imageInfoFilePath, 'r', encoding='utf8') as f:
-                self.imageInfoList = json.load(f)
-        else:
-            print('ImageInfo File Not Found. Create one.')
-            self.imageInfoList = []
+
         self.createProcessTools()
 
-    def isInFilterDir(self,dir,filteredDirList):
+        if not os.path.isfile(self.imageInfoFilePath):
+            print('Image info file not found. Creating empty DataFrame.')
+            self.imageInfoDF = pl.DataFrame([])
+        else:
+            ext = os.path.splitext(self.imageInfoFilePath)[1].lower()
+            try:
+                if ext == ".json":
+                    self.imageInfoDF = pl.read_json(self.imageInfoFilePath,schema=CURRENT_SCHEMA)
+                elif ext == ".parquet":
+                    self.imageInfoDF = pl.read_parquet(self.imageInfoFilePath)
+                else:
+                    print(
+                        f"Unsupported file type {ext}. Creating empty DataFrame.")
+                    self.imageInfoDF = pl.DataFrame([])
+            except Exception as e:
+                raise e
+                print(
+                    f"Failed to read file with Polars: {e}. Creating empty DataFrame.")
+                self.imageInfoDF = pl.DataFrame([])
+
+    def isInFilterDir(self, dir, filteredDirList):
         if self.topTopDir:
             topDir = self.topTopDir
         else:
@@ -581,7 +585,7 @@ class ImageInfoManager:
                 detectedFilterDir = True
                 break
         return detectedFilterDir
-    
+
     def createProcessTools(self):
         if self.toolConfigYAML:
             print('Use tool config YAML,param processTools has been ignored.')
@@ -591,7 +595,7 @@ class ImageInfoManager:
 
             processTools = []
             for toolDict in toolsConfig:
-                toolDictUpdate = {'forceUpdate': False,'multiGPUs':None,'excludeDirs':None,'includeDirs':None,
+                toolDictUpdate = {'forceUpdate': False, 'multiGPUs': None, 'excludeDirs': None, 'includeDirs': None,
                                   'args': {}, 'batchsize': 1, 'num_workers': 4}
                 toolDictUpdate.update(toolDict)
                 toolDictUpdate['toolClass'] = getattr(
@@ -603,20 +607,18 @@ class ImageInfoManager:
         if self.debugWithoutSave:
             print('!!!DEBUG MODE. NOT SAVED!!!')
             return
-        class NpEncoder(json.JSONEncoder):
-            def default(self, obj):
-                if isinstance(obj, np.integer):
-                    return int(obj)
-                if isinstance(obj, np.floating):
-                    return float(obj)
-                if isinstance(obj, np.ndarray):
-                    return obj.tolist()
-                return super(NpEncoder, self).default(obj)
         tempFilePath = self.imageInfoFilePath+'.lock'
-        with open(tempFilePath, 'w',encoding='utf8') as f:
-            json.dump(self.imageInfoList, f,cls=NpEncoder)
-        shutil.move(tempFilePath,self.imageInfoFilePath)
-        
+
+        if 'IDX' in self.imageInfoDF.columns:
+            df_to_save = self.imageInfoDF.drop('IDX')  # 删除第一列
+        else:
+            df_to_save = self.imageInfoDF
+
+        with open(tempFilePath, 'w', encoding='utf8') as f:
+            df_to_save.write_json(f)
+        with open(self.imageInfoFilePath+'.parquet', 'w') as f:
+            df_to_save.write_parquet(f)
+        shutil.move(tempFilePath, self.imageInfoFilePath)
 
     def getImageList(self, filteredDirList=[], relPath=False):
         print('Detect image files...')
@@ -654,22 +656,78 @@ class ImageInfoManager:
                     imageList.append(fullFilePath)
         print('%s images found.' % len(imageList))
         return imageList
+
     @staticmethod
     def processFunc(param):
-        itemIdcs,toolClass,topDir,device,imageInfoList,toolArgs = param
+        itemIdcs, toolClass, topDir, device, imageInfoList, toolArgs = param
         toolArgs['device'] = device
         toolInstance = toolClass(topDir, **toolArgs)
         updateDictIdxList = []
         for i, imageInfoIdx in enumerate(itemIdcs):
             try:
-                updateDictIdxList.append((imageInfoIdx,toolInstance.getUpdateDict(
+                updateDictIdxList.append((imageInfoIdx, toolInstance.getUpdateDict(
                     imageInfoList[imageInfoIdx], topDir)))
             except Exception as e:
                 raise e
                 print('ERROR:%s:%s' %
-                    (imageInfoList[imageInfoIdx], str(e)))
+                      (imageInfoList[imageInfoIdx], str(e)))
         return updateDictIdxList
-                
+
+    def batch_update(self, df: pl.DataFrame, idx_series: pl.Series, updates_list: list[dict]) -> pl.DataFrame:
+        """
+        向量化批量更新 DataFrame。
+        df: 原始 DataFrame
+        idx_series: 待更新行的索引 Series（和 updates_list 一一对应）
+        updates_list: 更新字典列表，每个字典对应一行更新
+        """
+        if len(idx_series) != len(updates_list):
+            raise ValueError("idx_series 和 updates_list 长度必须一致")
+
+        idx_series = pl.Series(idx_series)
+
+        # 临时 DataFrame 保存更新值
+        updates_df = pl.DataFrame(updates_list,schema_overrides=CURRENT_SCHEMA)
+
+        # 哪些列会从 updates_df 来
+        upd_cols = set(updates_df.columns)
+
+        # 拼接 idx_series 在最前面
+        updates_df = pl.DataFrame(
+            [idx_series.rename("IDX")]).hstack(updates_df)
+
+        # left join 保留 df 的所有行（updates_df 的 IDX 是 df 的子集）
+        dfj = df.join(updates_df, on="IDX", how="left", suffix="_upd")
+
+        # 对 df 里已有的列：
+        # - 如果该列在 updates_df 里，用 coalesce([col_upd, col])：有更新值就覆盖，否则保持原值
+        # - 否则直接保留原列
+        cols = [pl.col("IDX")] + [
+            pl.coalesce([pl.col(f"{c}_upd"), pl.col(c)]).alias(
+                c) if c in upd_cols else pl.col(c)
+            for c in df.columns if c != "IDX"
+        ]
+
+        # updates_df 里原来没有的列（新增列）直接追加
+        new_cols = [
+            pl.col(c) for c in updates_df.columns if c not in df.columns and c != "IDX"]
+
+        return dfj.select([*cols, *new_cols])
+
+    def find_missing_or_null_indices(self, df: pl.DataFrame, fields: list[str], idxField='IDX') -> pl.Series:
+        idxs = set()
+
+        for c in fields:
+            if c not in df.columns:
+                # 字段缺失 -> 全部行
+                idxs.update(df[idxField].to_list())
+            else:
+                # 字段存在 -> 取该列为 null 的行
+                null_idx = df.filter(df[c].is_null())[idxField].to_list()
+                idxs.update(null_idx)
+
+        # 返回 UInt32 索引 Series
+        return pl.Series("idx", sorted(idxs), dtype=pl.UInt32)
+
     def infoUpdate(self):
         processToolNameListDict = {}
         for processTool in self.processTools:
@@ -681,55 +739,58 @@ class ImageInfoManager:
                 'batchsize': processTool['batchsize'],
                 'num_workers': processTool['num_workers'],
                 'multiGPUs': processTool['multiGPUs'],
-                'excludeDirs':processTool['excludeDirs'],
-                'includeDirs':processTool['includeDirs'],
+                'excludeDirs': processTool['excludeDirs'],
+                'includeDirs': processTool['includeDirs'],
                 'itemIdx': []}
 
         for processTool, processDict in processToolNameListDict.items():
             toolUpdateCount = 0
-            if (processDict['includeDirs'] and \
-                    not self.isInFilterDir(self.topDir,processDict['includeDirs'])) \
-                or \
-                (processDict['excludeDirs'] and self.isInFilterDir(self.topDir,processDict['excludeDirs'])):
+            if (processDict['includeDirs'] and
+                not self.isInFilterDir(self.topDir, processDict['includeDirs'])) \
+                    or \
+                    (processDict['excludeDirs'] and self.isInFilterDir(self.topDir, processDict['excludeDirs'])):
                 print('Skip %s' % processTool.__name__)
                 continue
 
-            for idx, imageInfo in enumerate(self.imageInfoList):
-                meetUpdateCriteria = True
-                if hasattr(processTool, 'updateCriteria'):
-                    meetUpdateCriteria = processDict['forceUpdate'] or processTool.updateCriteria(
-                        imageInfo)
+            if processDict['forceUpdate']:
+                filteredImageInfoIdcs = self.imageInfoDF['IDX']
+            else:
+                if hasattr(processTool, 'updateFilter'):
+                    filteredImageInfoIdcs = processTool.updateFilter(
+                        self.imageInfoDF)
                 else:
-                    meetUpdateCriteria = processDict['forceUpdate'] or len(
-                        processDict['fieldSet']-set(imageInfo.keys())) > 0
-                if meetUpdateCriteria:
-                    processDict['itemIdx'].append(idx)
+                    filteredImageInfoIdcs = self.find_missing_or_null_indices(
+                        self.imageInfoDF, processDict['fieldSet'])
+
+            processDict['itemIdx'] = filteredImageInfoIdcs
 
             if len(processDict['itemIdx']) > 0:
                 print('Tool: %s' % processTool.__name__)
                 if not processDict['multiGPUs']:
-                    toolInstance = processTool(self.topDir, **processDict['args'])
+                    toolInstance = processTool(
+                        self.topDir, **processDict['args'])
                     if hasattr(processTool, 'supportBatchInference') and processTool.supportBatchInference():
                         ds = BatchInferenceDataset(
-                            self.topDir, self.imageInfoList, processDict['itemIdx'], toolInstance.transform)
+                            self.topDir, self.imageInfoDF, processDict['itemIdx'], toolInstance.transform)
 
                         if hasattr(processTool, 'custom_collate'):
                             custom_collate = processTool.custom_collate
                         else:
                             custom_collate = None
                         dtldr = DataLoader(ds,
-                                        batch_size=processDict['batchsize'],
-                                        shuffle=False,
-                                        num_workers=processDict['num_workers'],
-                                        collate_fn=custom_collate,
-                                        drop_last=False)
+                                           batch_size=processDict['batchsize'],
+                                           shuffle=False,
+                                           num_workers=processDict['num_workers'],
+                                           collate_fn=custom_collate,
+                                           drop_last=False)
                         with tqdm(total=len(ds)) as pbar:
                             lastTs = time.time()
                             for indices, imgs in dtldr:
-                                updateDictList = toolInstance.update_batch(imgs)
-                                for imageInfoIdx, updateDict in zip(indices, updateDictList):
-                                    self.imageInfoList[imageInfoIdx].update(
-                                        updateDict)
+                                updateDictList = toolInstance.update_batch(
+                                    imgs)
+                                self.imageInfoDF = self.batch_update(
+                                    self.imageInfoDF, indices, updateDictList)
+
                                 pbar.update(len(indices))
                                 toolUpdateCount = toolUpdateCount+len(indices)
                                 nowTs = time.time()
@@ -740,18 +801,20 @@ class ImageInfoManager:
                         lastTs = time.time()
                         for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
                             try:
-                                updateResult = toolInstance.update(
-                                    self.imageInfoList[imageInfoIdx], self.topDir)
+                                updateResult = toolInstance.getUpdateDict(
+                                    self.imageInfoDF, imageInfoIdx, self.topDir)
+                                self.imageInfoDF = self.batch_update(
+                                    self.imageInfoDF, (i,), (updateResult,))
                                 if updateResult is not None:
                                     toolUpdateCount = toolUpdateCount+1
                             except Exception as e:
                                 raise e
                                 print('ERROR:%s:%s' %
-                                    (self.imageInfoList[imageInfoIdx], str(e)))
+                                      (self.imageInfoList[imageInfoIdx], str(e)))
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
-                                if toolUpdateCount>0:
+                                if toolUpdateCount > 0:
                                     self.saveImageInfoList()
                 else:
                     lastTs = time.time()
@@ -760,72 +823,85 @@ class ImageInfoManager:
                     wokerNum = len(woker)
                     taskNum = len(tasks)
                     divideStep = math.ceil(taskNum/wokerNum)
-                    subLists=[(tasks[i:i+divideStep],
-                               processTool,
-                               self.topDir,
-                               'cuda:%d'%devNum,
-                               self.imageInfoList,
-                               processDict['args']) 
-                              for i,devNum  in zip(range(0, taskNum, divideStep),woker)]
+                    subLists = [(tasks[i:i+divideStep],
+                                 processTool,
+                                 self.topDir,
+                                 'cuda:%d' % devNum,
+                                self.imageInfoList,
+                                processDict['args'])
+                                for i, devNum in zip(range(0, taskNum, divideStep), woker)]
 
-                    print("MultiGPUs: %d task(s) assigned to %d workers."%(taskNum,wokerNum))
+                    print("MultiGPUs: %d task(s) assigned to %d workers." %
+                          (taskNum, wokerNum))
                     for param in subLists:
-                        tasks,_,_,device,_,_ = param
-                        print('Worker %s: %d'%(device,len(tasks)))
+                        tasks, _, _, device, _, _ = param
+                        print('Worker %s: %d' % (device, len(tasks)))
 
                     with Pool(wokerNum) as p:
                         for updateDictIdxList in tqdm(p.imap(self.processFunc, subLists), total=len(subLists)):
                             for imageInfoIdx, updateDict in updateDictIdxList:
-                                self.imageInfoList[imageInfoIdx].update(updateDict)
-                            toolUpdateCount = toolUpdateCount+len(updateDictIdxList)
+                                self.imageInfoList[imageInfoIdx].update(
+                                    updateDict)
+                            toolUpdateCount = toolUpdateCount + \
+                                len(updateDictIdxList)
                             nowTs = time.time()
                             if nowTs-lastTs >= self.saveInterval:
                                 lastTs = nowTs
-                                self.saveImageInfoList() 
-                if toolUpdateCount==0:
-                    print(f'No update in {self.topDir} by tool {processTool.__name__}.')
-                else:         
+                                self.saveImageInfoList()
+                if toolUpdateCount == 0:
+                    print(
+                        f'No update in {self.topDir} by tool {processTool.__name__}.')
+                else:
                     self.saveImageInfoList()
             else:
                 print('No update by %s' % processTool.__name__)
                 continue
 
     def updateImages(self, filteredDirList=[]):
-        actualImageList = self.getImageList(filteredDirList, relPath=True)
-        imageFileNameIndexDict = {
-            imageInfo['IMG']: idx for idx, imageInfo in enumerate(self.imageInfoList)}
-        orinImageInfoListPathSet = set(imageFileNameIndexDict.keys())
+        # 1️⃣ 扫描磁盘图片
+        actualList = self.getImageList(filteredDirList, relPath=True)
+        actualDF = pl.DataFrame({'IMG': actualList})
 
-        actualImagePathSet = set(actualImageList)
-        newImageItems = actualImagePathSet-orinImageInfoListPathSet
-        deletedImageItems = orinImageInfoListPathSet-actualImagePathSet
+        if "IDX" in self.imageInfoDF.columns:
+            self.imageInfoDF = self.imageInfoDF.drop("IDX")
 
-        deletedImageItemsNum = len(deletedImageItems)
-        if deletedImageItemsNum > 0:
-            displayCounter = 10
-            for delIdx in sorted([imageFileNameIndexDict[itemRelPath] for itemRelPath in deletedImageItems], reverse=True):
-                if displayCounter > 0:
-                    displayCounter = displayCounter - 1
-                    print('Del:', self.imageInfoList[delIdx])
-                elif displayCounter == 0:
-                    print('Del: %d items to be displayed. Too much to show...' %
-                          deletedImageItemsNum)
-                    displayCounter = displayCounter - 1
-                self.imageInfoList.pop(delIdx)
+        deleted_list = []
 
-        newImageItemsNum = len(newImageItems)
-        if newImageItemsNum > 0:
-            displayCounter = 10
-            for newImageRelPath in newImageItems:
-                if displayCounter > 0:
-                    displayCounter = displayCounter - 1
-                    print('New:', {'IMG': newImageRelPath})
-                elif displayCounter == 0:
-                    print('New: %d items to be displayed. Too much to show...' %
-                          newImageItemsNum)
-                    displayCounter = displayCounter - 1
+        if 'IMG' not in self.imageInfoDF.columns or self.imageInfoDF.is_empty():
+            self.imageInfoDF = actualDF.with_row_index(name="IDX")
+            new_list = actualList[:10]
+        else:
+            # 2️⃣ 找出删除的图片
+            deletedDF = self.imageInfoDF.filter(
+                ~pl.col('IMG').is_in(actualDF['IMG']))
+            deleted_list = deletedDF['IMG'].to_list()
 
-                self.imageInfoList.append({'IMG': newImageRelPath})
+            # 3️⃣ 删除不存在的图片
+            self.imageInfoDF = self.imageInfoDF.filter(
+                pl.col('IMG').is_in(actualDF['IMG']))
+
+            # 4️⃣ 找出新增图片
+            newImagesDF = actualDF.filter(
+                ~pl.col('IMG').is_in(self.imageInfoDF['IMG']))
+            new_list = newImagesDF['IMG'].to_list()
+
+            # 5️⃣ 为新增图片补齐列
+            for col in self.imageInfoDF.columns:
+                if col != 'IMG' and col not in newImagesDF.columns:
+                    newImagesDF = newImagesDF.with_columns(
+                        pl.lit(None).alias(col))
+
+            # 6️⃣ 合并
+            self.imageInfoDF = pl.concat(
+                [self.imageInfoDF, newImagesDF], how='vertical').rechunk()
+
+            self.imageInfoDF = self.imageInfoDF.with_row_index(name="IDX")
+
+        # 7️⃣ 打印新增和删除图片信息（总数 + 前 10 条）
+        print(f"新增图片: {len(new_list)}")
+        print(new_list[:10] if new_list else [])
+        print(f"删除图片: {len(deleted_list)}")
+        print(deleted_list[:10] if deleted_list else [])
 
 
 if __name__ == '__main__':
