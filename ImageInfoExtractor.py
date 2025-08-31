@@ -857,6 +857,10 @@ class ImageInfoManager:
                 print('Skip %s' % processTool.__name__)
                 continue
 
+            if len(self.imageInfoDF)==0:
+                print(f'Skip empty dataset dir {self.topDir}')
+                break
+
             if processDict['forceUpdate']:
                 filteredImageInfoIdcs = self.imageInfoDF['IDX']
             else:
