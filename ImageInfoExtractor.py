@@ -635,22 +635,22 @@ class ImageInfoManager:
                  imageInfoFileName='ImageInfo.json',
                  processTools=[], toolConfigYAML=None, topTopDir=None, debugWithoutSave=False,
                  saveInterval=3600) -> None:
-        self.topDir = topDir
-        self.topTopDir = topTopDir
+        self.topDir = Path(topDir)
+        self.topTopDir = Path(topTopDir)
         self.debugWithoutSave = debugWithoutSave
         self.processTools = processTools
         self.toolConfigYAML = toolConfigYAML
-        self.imageInfoFilePath = os.path.join(self.topDir, imageInfoFileName)
+        self.imageInfoFilePath = self.topDir/imageInfoFileName
         self.supportImageFormatList = ['.jpg', '.webp', '.png', '.heic']
         self.saveInterval = saveInterval
 
         self.createProcessTools()
 
-        if not os.path.isfile(self.imageInfoFilePath):
+        if not self.imageInfoFilePath.is_file():
             print('Image info file not found. Creating empty DataFrame.')
             self.imageInfoDF = pl.DataFrame([])
         else:
-            ext = os.path.splitext(self.imageInfoFilePath)[1].lower()
+            ext = self.imageInfoFilePath.suffix.lower()
             if ext == ".json":
                 self.imageInfoDF = pl.read_json(
                     self.imageInfoFilePath, schema=CURRENT_SCHEMA)
@@ -695,22 +695,30 @@ class ImageInfoManager:
                 processTools.append(toolDictUpdate)
             self.processTools = processTools
 
-    def saveImageInfoList(self):
+    def saveImageInfoList(self,updateJson=False):
         if self.debugWithoutSave:
             print('!!!DEBUG MODE. NOT SAVED!!!')
             return
-        tempFilePath = self.imageInfoFilePath+'.lock'
 
         if 'IDX' in self.imageInfoDF.columns:
             df_to_save = self.imageInfoDF.drop('IDX')  # 删除第一列
         else:
             df_to_save = self.imageInfoDF
 
-        with open(tempFilePath, 'w', encoding='utf8') as f:
-            df_to_save.write_json(f)
-        with open(self.imageInfoFilePath+'.parquet', 'w') as f:
+        if updateJson:
+            tmpFile = self.imageInfoFilePath.with_suffix('.json.lock')
+            targetFile = self.imageInfoFilePath.with_suffix('.json')
+            with open(tmpFile, 'w', encoding='utf8') as f:
+                df_to_save.write_json(f)
+            shutil.move(tmpFile, targetFile)
+
+
+        tmpFile = self.imageInfoFilePath.with_suffix('.parquet.lock')
+        targetFile = self.imageInfoFilePath.with_suffix('.parquet')
+
+        with open(tmpFile, 'w') as f:
             df_to_save.write_parquet(f)
-        shutil.move(tempFilePath, self.imageInfoFilePath)
+        shutil.move(tmpFile, targetFile)
 
     def getImageList(self, filteredDirList=[], relPath=False):
         print('Detect image files...')

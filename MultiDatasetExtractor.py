@@ -66,7 +66,9 @@ class MultiDatasetExtractor:
             print('====Processing %s' % imageInfoFile)
 
             imageInfoManager = ImageInfoManager(
-                imageInfoFile.parent, toolConfigYAML=toolConfig,
+                imageInfoFile.parent, 
+                imageInfoFile.name,
+                toolConfigYAML=toolConfig,
                 topTopDir=self.topDir, debugWithoutSave=self.debugWithoutSave)
             imageInfoManager.updateImages(
                 filteredDirList=['raw_before_sr', 'ocr_result'])
