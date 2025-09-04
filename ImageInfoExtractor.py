@@ -620,6 +620,7 @@ class UpdateBuffer:
 
         # 如果有保存函数，每次 flush 后调用一次
         if self.save_func:
+            print('Save to parquet...')
             self.save_func(self)
 
     def get_df(self):
@@ -921,11 +922,11 @@ class ImageInfoManager:
                                 pbar.update(len(indices))
                                 toolUpdateCount = toolUpdateCount+len(indices)
                     else:
-                        for i, imageInfoIdx in enumerate(tqdm(processDict['itemIdx'])):
+                        for imageInfoIdx in tqdm(processDict['itemIdx']):
                             try:
                                 updateResult = toolInstance.getUpdateDict(
                                     self.imageInfoDF, imageInfoIdx, self.topDir)
-                                buffer.add(i, updateResult)
+                                buffer.add(imageInfoIdx, updateResult)
                                 if updateResult is not None:
                                     toolUpdateCount = toolUpdateCount+1
                             except Exception as e:
