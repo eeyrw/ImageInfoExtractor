@@ -19,7 +19,7 @@ class Predictor():
                                                 device_map=self.device).half()
         self.model.eval()
 
-    def predict(self, raw_image):
+    def predict(self, raw_image,returnMaskedImage=True):
 
         image = raw_image
         # Data settings
@@ -38,12 +38,13 @@ class Predictor():
         pred = preds[0].squeeze()
         pred_pil = transforms.ToPILImage()(pred)
         mask = pred_pil.resize(image.size)
-        image.putalpha(mask)
+        if returnMaskedImage:
+            image.putalpha(mask)
         return image, mask
 
 
 if __name__ == '__main__':
     pr = Predictor(weightsDir='./DLToolWeights',
                    device='cuda:0')
-    img = PIL.Image.open('xxx.heic').convert('RGB')
+    img = PIL.Image.open('15.jpg').convert('RGB')
     pr.predict(img)[0].save('alp.png')
