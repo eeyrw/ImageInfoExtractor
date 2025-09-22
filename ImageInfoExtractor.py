@@ -284,6 +284,30 @@ class ImageEmbeddingTool:
     def fieldSet():
         return set(['IMG_EMBD', 'H', 'W'])
 
+class ImageMattingTool:
+    def __init__(self, topDir, device='cuda') -> None:
+        import BiRefNetInference.inference
+        self.imageSRPredictor = BiRefNetInference.inference.Predictor(
+            weightsDir='./DLToolWeights', device=device)
+
+    def getUpdateDict(self, imageInfoDF, idx, topDir):
+        img = pil_loader(
+            os.path.join(topDir, imageInfoDF['IMG'][idx]))
+        width, height = img.size
+
+        _,mask = self.imageSRPredictor.predict(img,returnMaskedImage=False)
+        targetMaskPath = Path(topDir)/'matting_mask'/Path(imageInfoDF['IMG'][idx]).with_suffix('.png')
+        if not targetMaskPath.parent.exists():
+            os.makedirs(targetMaskPath.parent)
+        mask.save(targetMaskPath,
+                format="PNG",
+                optimize=True)
+
+        return {'W': width, 'H': height, 'HAS_MATTING_MASK':True}
+
+    @staticmethod
+    def fieldSet():
+        return set(['H', 'W','HAS_MATTING_MASK'])
 
 class ImageSRTool:
     def __init__(self, topDir, device='cuda', srType='Photo') -> None:
